@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 import math
 import argparse, csv, time, json, socket, urllib.request, webbrowser
+import subprocess, os, sys, threading
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--test', action='store_true', help='Run in test/replay mode')
@@ -220,6 +221,54 @@ def stream():
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
     )
+
+@app.route('/version')
+def version():
+    """Return the current git commit hash and whether the working tree is dirty."""
+    repo_dir = Path(__file__).parent
+    try:
+        commit = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        dirty = bool(subprocess.run(
+            ['git', 'status', '--porcelain'],
+            cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        ).stdout.strip())
+    except Exception:
+        return jsonify({'commit': None, 'dirty': False})
+    return jsonify({'commit': commit, 'dirty': dirty})
+
+@app.route('/update', methods=['POST'])
+def update():
+    """Run git pull in the repo directory, then restart the server process."""
+    repo_dir = Path(__file__).parent
+    try:
+        result = subprocess.run(
+            ['git', 'pull'],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = (result.stdout + result.stderr).strip()
+        changed = result.returncode == 0 and 'Already up to date.' not in output
+    except Exception as e:
+        return jsonify({'ok': False, 'output': str(e), 'changed': False})
+
+    if changed:
+        def restart():
+            time.sleep(0.5)
+            # Spawn a shell that waits for this process to fully exit and release
+            # the port, then starts a fresh Python process with the same args.
+            subprocess.Popen(
+                ['sh', '-c', 'sleep 1 && exec "$@"', '--', sys.executable] + sys.argv,
+                close_fds=True,
+            )
+            os._exit(0)
+        threading.Thread(target=restart, daemon=True).start()
+
+    return jsonify({'ok': result.returncode == 0, 'output': output, 'changed': changed})
 
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':

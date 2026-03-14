@@ -305,6 +305,57 @@
       .zoom-hint { font-size: 0.68rem; }
     }
 
+    /* ── Update corner ───────────────────────────────────────────────────── */
+    #update-corner {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
+    #update-overlay {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 0.72rem;
+      color: var(--subtext);
+      max-width: 320px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    #dev-badge {
+      display: none;
+      background: rgba(250, 179, 135, 0.12);
+      color: var(--wdir);
+      border: 1px solid var(--wdir);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+    }
+
+    #update-btn {
+      background: var(--muted);
+      color: var(--subtext);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.72rem;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #update-btn:hover:not(:disabled) { border-color: var(--subtext); color: var(--text); }
+    #update-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
   </style>
 </head>
 <body>
@@ -440,6 +491,12 @@
 
   </div>
 </main>
+
+<div id="update-corner">
+  <div id="update-overlay"></div>
+  <div id="dev-badge">DEV</div>
+  <button id="update-btn">↑ Update</button>
+</div>
 
 <script src="/static/uplot.min.js"></script>
 <script>
@@ -982,6 +1039,14 @@ function pushToCharts() {
   if (zoomedRange) {
     // Zoomed/panned mode: hold the user's locked window on every incoming point.
     for (const c of Object.values(charts)) c.setScale('x', zoomedRange);
+    // Keep the wspd y-scale on a nice [0, step*4] range in zoomed mode so the
+    // splits function always generates ticks at 0/25/50/75/100% of plot height,
+    // keeping them aligned with the wdir gridlines (which are always at those same positions).
+    const wspdRangeZ = paddedRange(minMaxVisible('wspd', zoomedRange.min, zoomedRange.max), 0.15, 0.8);
+    if (wspdRangeZ) {
+      const stepZ = niceStep((wspdRangeZ.max - 0) / 4, 0.25);
+      charts.wind.setScale('wspd', { min: 0, max: stepZ * 4 });
+    }
   } else if (buf.ts.length >= 1) {
     // Live mode: show a rolling VIEW_SEC-wide window ending at the latest point.
     // buf.ts is chronological so the last element is always the newest timestamp.
@@ -1300,6 +1365,61 @@ requestAnimationFrame(() => {
   // ── SSE stream ──────────────────────────────────────────────────────────────
   connect();
 });
+
+// ── Version indicator ─────────────────────────────────────────────────────────
+fetch('/version')
+  .then(r => r.json())
+  .then(data => {
+    if (data.dirty) {
+      document.getElementById('dev-badge').style.display = 'block';
+      document.getElementById('update-btn').style.display = 'none';
+    } else if (data.commit) {
+      document.getElementById('update-btn').textContent = `↑ Update · ${data.commit}`;
+    }
+  })
+  .catch(() => {});
+
+// ── Update (git pull + restart) ───────────────────────────────────────────────
+document.getElementById('update-btn').onclick = async () => {
+  const btn     = document.getElementById('update-btn');
+  const overlay = document.getElementById('update-overlay');
+  btn.disabled = true;
+  overlay.style.display = 'block';
+  overlay.textContent = 'Running git pull…';
+
+  try {
+    const resp = await fetch('/update', { method: 'POST' });
+    const data = await resp.json();
+    overlay.textContent = data.output || '(no output)';
+
+    if (data.changed) {
+      overlay.textContent += '\n\nRestarting server…';
+      // Give the server time to go down, then poll until it comes back.
+      await new Promise(r => setTimeout(r, 2500));
+      const poll = async () => {
+        try {
+          await fetch('/');
+          location.reload();
+        } catch {
+          setTimeout(poll, 1000);
+        }
+      };
+      poll();
+    } else if (data.ok) {
+      overlay.textContent += '\n\nAlready up to date.';
+      btn.disabled = false;
+      setTimeout(() => { overlay.style.display = 'none'; }, 3000);
+    } else {
+      // git pull returned non-zero
+      overlay.style.borderColor = 'var(--t)';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    overlay.textContent = 'Error: ' + e.message;
+    overlay.style.borderColor = 'var(--t)';
+    btn.disabled = false;
+  }
+};
 </script>
 </body>
 </html>
