@@ -1,6 +1,6 @@
 # Mesoview
 
-Real-time web dashboard for NSSL Mobile Mesonet data. Fetches observations from the Campbell datalogger at 1 Hz, writes them to daily CSV files, and serves live interactive charts over a local network.
+Real-time web dashboard for NSSL Mobile Mesonet data. Fetches observations from the Campbell Scientific datalogger at 1 Hz, writes them to daily txt files, and serves live interactive charts over a local network.
 
 ---
 
@@ -63,11 +63,11 @@ cp mesoview.config.example.json mesoview.config.json
 
 ```json
 {
-  "data_dir":           "/path/to/your/data/directory",
+  "data_dir":           "~/data/raw/mesonet",
+  "log_dir":            "~/mesoview_logs",
   "logger_ip":          "192.168.4.6",
   "http_port":          8080,
   "mdns_hostname":      "mesoview",
-  "n_records":          30,
   "ingest_retry_max":   100,
   "ingest_retry_delay": 5
 }
@@ -76,10 +76,10 @@ cp mesoview.config.example.json mesoview.config.json
 | Key | Description | Default |
 |-----|-------------|---------|
 | `data_dir` | Where daily `.txt` data files are written and read | `~/data/raw/mesonet` |
+| `log_dir` | Where daily log files are written (`mesoview.YYYYMMDD.log`) | `~/mesoview_logs` |
 | `logger_ip` | IP address of the Campbell datalogger on the vehicle network | `192.168.4.6` |
 | `http_port` | Port the web viewer listens on | `8080` |
 | `mdns_hostname` | mDNS hostname for the viewer (if your network supports it) | `mesoview` |
-| `n_records` | How many records to include in the console rolling average printout | `30` |
 | `ingest_retry_max` | Max fetch attempts before the ingest script exits | `100` |
 | `ingest_retry_delay` | Seconds between retry attempts | `5` |
 
@@ -100,6 +100,12 @@ Open a browser on any device connected to the same network and go to:
 
 ```
 http://<host-machine-ip>:8080
+```
+
+All output from both scripts is written to `~/mesoview_logs/mesoview.YYYYMMDD.log` (configurable via `log_dir`). To watch it live:
+
+```bash
+tail -f ~/mesoview_logs/mesoview.$(date +%Y%m%d).log
 ```
 
 To run in test/replay mode (no datalogger needed):
@@ -146,8 +152,6 @@ Create `~/Library/LaunchAgents/com.mesoview.plist`:
   <key>WorkingDirectory</key>  <string>/path/to/mesoview</string>
   <key>RunAtLoad</key>         <true/>
   <key>KeepAlive</key>         <true/>
-  <key>StandardOutPath</key>   <string>/tmp/mesoview.log</string>
-  <key>StandardErrorPath</key> <string>/tmp/mesoview.log</string>
 </dict>
 </plist>
 ```
@@ -175,7 +179,7 @@ crontab -e
 Add this line (replace paths):
 
 ```
-@reboot cd /path/to/mesoview && /path/to/conda/envs/mesoview/bin/python supervisor.py >> /tmp/mesoview.log 2>&1
+@reboot cd /path/to/mesoview && /path/to/conda/envs/mesoview/bin/python supervisor.py
 ```
 
 Or use a **systemd user service** for better logging and control. Create `~/.config/systemd/user/mesoview.service`:

@@ -7,7 +7,6 @@
 import os
 import sys
 import time
-import numpy as np
 import datetime as dt
 import requests
 from pathlib import Path
@@ -32,24 +31,11 @@ _CFG = _load_config()
 DATA_DIR = Path(_CFG.get('data_dir', str(Path.home() / 'data' / 'raw' / 'mesonet')))
 IP = _CFG.get('logger_ip', '192.168.4.6')
 
-# set the duration of the printed averages (seconds)
-N_RECORDS = int(_CFG.get('n_records', 30))
 MAX_TRIES = int(_CFG.get('ingest_retry_max', 100))
 RETRY_DELAY = int(_CFG.get('ingest_retry_delay', 5))
 
 # set headers for the files
 HEADER = 'sfc_wspd,sfc_wdir,t_slow,rh_slow,t_fast,dewpoint,der_rh,pressure,compass_dir,gps_date,gps_time,lat,lon,gps_alt,gps_spd,gps_dir,panel_temp'
-
-# variables to average
-AVG_VARIABLES = {
-    'Altitude':           {'idx': 13, 'unit': 'm'},
-    'Pressure':           {'idx': 7,  'unit': 'hPa'},
-    'Temperature':        {'idx': 4,  'unit': '˚C'},
-    'Dewpoint':           {'idx': 5,  'unit': '˚C'},
-    'Relative Humidity':  {'idx': 6,  'unit': '%'},
-    'Wind Speed':         {'idx': 0,  'unit': 'm/s'},
-    'Wind Direction':     {'idx': 1,  'unit': '˚'},
-}
 
 
 class TableParser(HTMLParser):
@@ -115,39 +101,8 @@ def parse_record(raw_values):
     return ','.join(values)
 
 
-def process_averages(average_data):
-    """Print N-record averages and return a cleared buffer."""
-    start_time = dt.datetime.strptime(
-        average_data[0].split(',')[9] + average_data[0].split(',')[10], '%d%m%y%H%M%S'
-    )
-    end_time = dt.datetime.strptime(
-        average_data[-1].split(',')[9] + average_data[-1].split(',')[10], '%d%m%y%H%M%S'
-    )
-
-    print(f"Average MM data from {start_time.strftime('%b %d %H:%M:%S')} to {end_time.strftime('%H:%M:%S UTC')}")
-
-    for var_name, var_info in AVG_VARIABLES.items():
-        try:
-            idx  = var_info['idx']
-            unit = var_info['unit']
-            values = [float(line.split(',')[idx]) for line in average_data]
-            avg = np.mean(values)
-
-            if var_name in ('Temperature', 'Dewpoint'):
-                print(f"  {var_name}: {avg:.2f}{unit} ({(avg * 9/5) + 32:.2f}˚F)")
-            else:
-                print(f"  {var_name}: {avg:.2f}{unit}")
-
-        except Exception as e:
-            print(f"  Error calculating average for {var_name}: {e}")
-
-    print("-" * 50)
-    return []
-
 
 def main_loop():
-    average_data = []
-
     while True:
         start = dt.datetime.now(timezone.utc)
 
@@ -156,8 +111,8 @@ def main_loop():
         data_line = parse_record(raw)
 
         # resolve daily output file
-        date = dt.datetime.strptime(data_line.split(',')[9], '%d%m%y').strftime('%Y%m%d')
-        daily_file = DATA_DIR / f'{date}.txt'
+        file_date = dt.datetime.strptime(data_line.split(',')[9], '%d%m%y').strftime('%Y%m%d')
+        daily_file = DATA_DIR / f'{file_date}.txt'
 
         if not daily_file.exists():
             daily_file.parent.mkdir(parents=True, exist_ok=True)
@@ -166,11 +121,6 @@ def main_loop():
 
         with open(daily_file, 'a') as f:
             f.write(data_line + '\n')
-
-        average_data.append(data_line)
-
-        if len(average_data) >= N_RECORDS or start.strftime('%H%M%S') == '235959':
-            average_data = process_averages(average_data)
 
         elapsed = (dt.datetime.now(timezone.utc) - start).total_seconds()
         if elapsed < 1:

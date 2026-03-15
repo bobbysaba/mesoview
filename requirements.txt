@@ -1,4 +1,3 @@
 flask
-numpy
 requests
 zeroconf

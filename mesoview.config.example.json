@@ -1,9 +1,9 @@
 {
-  "data_dir": "~/data/raw/mesonet",
-  "logger_ip": "192.168.4.6",
-  "http_port": 8080,
-  "mdns_hostname": "mesoview",
-  "n_records": 30,
-  "ingest_retry_max": 100,
+  "data_dir":           "~/data/raw/mesonet",
+  "log_dir":            "~/mesoview_logs",
+  "logger_ip":          "192.168.4.6",
+  "http_port":          8080,
+  "mdns_hostname":      "mesoview",
+  "ingest_retry_max":   100,
   "ingest_retry_delay": 5
 }
