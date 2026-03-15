@@ -13,7 +13,13 @@ from pathlib import Path
 from datetime import datetime, timezone, timedelta
 import math
 import argparse, csv, time, json, socket, urllib.request, webbrowser
-import subprocess, os, sys, threading
+import subprocess, os, sys, threading, atexit
+
+try:
+    from zeroconf import ServiceInfo, Zeroconf
+except Exception:
+    ServiceInfo = None
+    Zeroconf = None
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--test', action='store_true', help='Run in test/replay mode')
@@ -66,10 +72,25 @@ def _version_worker():
 threading.Thread(target=_version_worker, daemon=True).start()
 
 # ── Config ───────────────────────────────────────────────────────────────────
+def _load_config():
+    cfg_path = Path(__file__).parent / 'mesoview.config.json'
+    if not cfg_path.exists():
+        return {}
+    try:
+        with open(cfg_path) as f:
+            return json.load(f) or {}
+    except Exception as e:
+        print(f'Warning: could not read config {cfg_path}: {e}')
+        return {}
+
+_CFG = _load_config()
+
 # Update DATA_DIR to match DATA_DIR in ingest_mm.py
-DATA_DIR      = Path.home() / 'data' / 'raw' / 'mesonet'
+DATA_DIR      = Path(_CFG.get('data_dir', str(Path.home() / 'data' / 'raw' / 'mesonet')))
 WINDOW        = 600          # records of history served on /initial (~10 min)
 UPLOT_VERSION = '1.6.31'
+HTTP_PORT     = int(_CFG.get('http_port', 8080))
+MDNS_HOSTNAME = _CFG.get('mdns_hostname', 'mesoview')
 
 # Column indices — matches HEADER in ingest_mm.py
 IDX = {'wspd': 0, 'wdir': 1, 't': 4, 'td': 5, 'pressure': 7, 'compass_dir': 8, 'date': 9, 'time_': 10, 'lat': 11, 'lon': 12}
@@ -138,6 +159,61 @@ def parse_row(row):
         )
     except (ValueError, IndexError):
         return None
+
+def get_local_ip():
+    """Best-effort LAN IP discovery (avoids 127.0.0.1 where possible)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return '0.0.0.0'
+
+def advertise_mdns(hostname='mesoview', port=8080):
+    """Advertise http://<hostname>.local:<port> via mDNS/Bonjour."""
+    if Zeroconf is None or ServiceInfo is None:
+        print('mDNS: zeroconf not installed; skipping .local advertisement')
+        return None
+
+    ip = get_local_ip()
+    service_type = '_http._tcp.local.'
+    instance = f'{hostname}._http._tcp.local.'
+    server = f'{hostname}.local.'
+    info = ServiceInfo(
+        service_type,
+        instance,
+        addresses=[socket.inet_aton(ip)],
+        port=port,
+        server=server,
+        properties={'path': '/'},
+    )
+
+    zc = Zeroconf()
+    try:
+        zc.register_service(info)
+    except Exception as e:
+        print(f'mDNS: failed to register service: {e}')
+        try:
+            zc.close()
+        except Exception:
+            pass
+        return None
+
+    def _cleanup():
+        try:
+            zc.unregister_service(info)
+            zc.close()
+        except Exception:
+            pass
+
+    atexit.register(_cleanup)
+    print(f'mDNS: advertised http://{hostname}.local:{port} -> {ip}:{port}')
+    return zc
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route('/')
@@ -304,14 +380,12 @@ if __name__ == '__main__':
         print(f'TEST MODE — replaying {TEST_FILE}')
     else:
         print(f'Data directory: {DATA_DIR}')
-    try:
-        local_ip = socket.gethostbyname(socket.gethostname())
-    except Exception:
-        local_ip = '0.0.0.0'
-    url = f'http://{local_ip}:8080'
+    advertise_mdns(hostname=MDNS_HOSTNAME, port=HTTP_PORT)
+    local_ip = get_local_ip()
+    url = f'http://{local_ip}:{HTTP_PORT}'
     print(f'Starting MM Viewer — open {url}')
     try:
         webbrowser.open(url, new=2)
     except Exception as e:
         print(f'Warning: could not open browser: {e}')
-    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=HTTP_PORT, debug=False, threaded=True)

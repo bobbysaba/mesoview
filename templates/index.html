@@ -203,8 +203,14 @@
       background: transparent !important;
       font-size: 0.72rem;
       color: var(--subtext);
+      white-space: nowrap;
     }
-    .u-legend th, .u-legend td { color: var(--subtext); }
+    .u-legend th, .u-legend td { color: var(--subtext); white-space: nowrap; }
+
+    /* On mobile let the legend wrap rather than overflow, and shrink the font */
+    html.is-mobile .u-legend { font-size: 0.62rem; white-space: normal; }
+    html.is-mobile .u-legend th,
+    html.is-mobile .u-legend td { white-space: normal; }
     .u-legend .u-marker {
       width: 14px;
       height: 0;
@@ -224,7 +230,7 @@
       text-align: right;
       font-size: 0.65rem;
       color: var(--muted);
-      margin-top: 2px;
+      margin-top: 3px;
     }
 
     /* Each chart card fills an equal share of the charts column height */
@@ -243,69 +249,53 @@
     }
 
     /* ── Mobile responsive ───────────────────────────────────────────────── */
-    @media (max-width: 768px) {
-      body {
-        height: auto;
-        min-height: 100vh;
-        overflow-y: auto;
-      }
-
-      main {
-        grid-template-columns: 1fr;
-        overflow: visible;
-        height: auto;
-      }
-
-      #charts-col {
-        height: auto;
-        overflow: visible;
-      }
-
-      /* Fixed height per chart card so they don't collapse in a scrollable layout */
-      #charts-col .card {
-        flex: none;
-        height: 240px;
-      }
-
-      #sidebar {
-        height: auto;
-        overflow: visible;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-      }
-
-      /* Compass card spans both columns */
-      #sidebar > .card:first-child {
-        grid-column: 1 / -1;
-      }
-
-      /* Scale compass down to fit mobile */
-      #sidebar #compass-canvas {
-        width: 140px;
-        height: 140px;
-      }
-
-      /* Increase sidebar text sizes for readability */
-      #sidebar .card-title  { font-size: 0.78rem; }
-      #sidebar .cv-row      { font-size: 0.80rem; padding: 5px 0; }
-      #sidebar .status-grid { font-size: 0.78rem; }
-      #sidebar #compass-deg { font-size: 0.85rem; }
-
-      /* Touch-friendly button targets */
-      #live-btn, #reset-btn {
-        padding: 8px 16px;
-        font-size: 0.82rem;
-        min-height: 36px;
-      }
-
-      #maxwind-reset-btn {
-        padding: 8px 14px;
-        font-size: 0.80rem;
-        min-height: 36px;
-      }
-
-      .zoom-hint { font-size: 0.68rem; }
+    html.is-mobile body {
+      height: auto;
+      min-height: 100vh;
+      overflow-y: auto;
     }
+    html.is-mobile main {
+      grid-template-columns: 1fr;
+      overflow: visible;
+      height: auto;
+    }
+    html.is-mobile #charts-col {
+      height: auto;
+      overflow: visible;
+    }
+    /* Fixed height per chart card so they don't collapse in a scrollable layout */
+    html.is-mobile #charts-col .card {
+      flex: none;
+      height: 240px;
+    }
+    html.is-mobile #sidebar {
+      height: auto;
+      overflow: visible;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    /* Compass card spans both columns */
+    html.is-mobile #sidebar > .card:first-child { grid-column: 1 / -1; }
+    /* Scale compass down to fit mobile */
+    html.is-mobile #sidebar #compass-canvas { width: 140px; height: 140px; }
+    /* Increase sidebar text sizes for readability */
+    html.is-mobile #sidebar .card-title  { font-size: 0.78rem; }
+    html.is-mobile #sidebar .cv-row      { font-size: 0.80rem; padding: 5px 0; }
+    html.is-mobile #sidebar .status-grid { font-size: 0.78rem; }
+    html.is-mobile #sidebar #compass-deg { font-size: 0.85rem; }
+    /* Touch-friendly button targets */
+    html.is-mobile #live-btn,
+    html.is-mobile #reset-btn {
+      padding: 8px 16px;
+      font-size: 0.82rem;
+      min-height: 36px;
+    }
+    html.is-mobile #maxwind-reset-btn {
+      padding: 8px 14px;
+      font-size: 0.80rem;
+      min-height: 36px;
+    }
+    html.is-mobile .zoom-hint { font-size: 0.68rem; }
 
     /* ── Update corner ───────────────────────────────────────────────────── */
     #update-corner {
@@ -382,17 +372,27 @@
     <div class="card">
       <div class="card-title">Temperature &amp; Dewpoint</div>
       <div class="chart-wrap"><div id="chart-ttd"></div></div>
-      <div class="zoom-hint">drag to zoom · scroll to pan · double-click to reset</div>
+      <div class="zoom-hint"></div>
     </div>
-    <div class="card">
+    <div class="card" id="card-wind-combined">
       <div class="card-title">Wind Speed &amp; Direction</div>
       <div class="chart-wrap"><div id="chart-wind"></div></div>
-      <div class="zoom-hint">drag to zoom · scroll to pan · double-click to reset</div>
+      <div class="zoom-hint"></div>
+    </div>
+    <div class="card mobile-only" style="display:none">
+      <div class="card-title">Wind Speed</div>
+      <div class="chart-wrap"><div id="chart-wspd"></div></div>
+      <div class="zoom-hint"></div>
+    </div>
+    <div class="card mobile-only" style="display:none">
+      <div class="card-title">Wind Direction</div>
+      <div class="chart-wrap"><div id="chart-wdir"></div></div>
+      <div class="zoom-hint"></div>
     </div>
     <div class="card">
       <div class="card-title">Pressure</div>
       <div class="chart-wrap"><div id="chart-pressure"></div></div>
-      <div class="zoom-hint">drag to zoom · scroll to pan · double-click to reset</div>
+      <div class="zoom-hint"></div>
     </div>
   </div>
 
@@ -519,8 +519,10 @@ const C = {
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
-const MAX_PTS    = 7200; // rolling buffer — 2 hours at 1 Hz (matches /initial history window)
-const VIEW_SEC   = 1800; // default live viewport — 30 minutes visible in non-zoomed mode
+const IS_MOBILE  = navigator.userAgentData?.mobile ?? /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+if (IS_MOBILE) document.documentElement.classList.add('is-mobile');
+const MAX_PTS    = IS_MOBILE ? 600  : 7200; // mobile: 10 min buffer; desktop: 2 hours
+const VIEW_SEC   = IS_MOBILE ? 300  : 1800; // mobile: 5 min viewport; desktop: 30 minutes
 const AVG_WIN    = 30;   // number of points in the live 30-second sidebar averages
 const GAP_SEC    = 2;    // readings ≥2 s apart get a null sentinel (line break on chart)
 const OPS_GAP_SEC = 14400; // gap ≥ this (4 hours) marks a new operations day; limits scroll-back
@@ -558,7 +560,8 @@ function chartHeight() {
   // The wrap is a flex child of its card and gets exactly the space left over
   // after the card title, zoom hint, and padding are rendered.
   const wrap = document.querySelector('.chart-wrap');
-  return Math.max(120, wrap ? wrap.clientHeight : 200);
+  const legendReserve = IS_MOBILE ? 42 : 28;
+  return Math.max(100, wrap ? wrap.clientHeight - legendReserve : 200);
 }
 
 // Formats a Unix-second timestamp as a local date/time string for uPlot cursor tooltips.
@@ -751,6 +754,81 @@ function addZoomListeners(chart) {
     }, 0);
   });
 
+  // ── Touch pan / pinch-to-zoom (mobile) ───────────────────────────────────
+  let lastTapTime = 0;
+  let t1X = 0, t1Y = 0;        // single-finger start position
+  let pinchStartDist = 0;      // two-finger start distance
+  let touchPanning = false;
+
+  chart.over.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      t1X = e.touches[0].clientX;
+      t1Y = e.touches[0].clientY;
+      touchPanning = false;
+      const now = Date.now();
+      if (now - lastTapTime < 300) { pendingReset = true; resetZoom(); setTimeout(() => { pendingReset = false; }, 100); }
+      lastTapTime = now;
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchStartDist = Math.hypot(dx, dy);
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  chart.over.addEventListener('touchmove', e => {
+    const n = buf.ts.length;
+    if (n === 0) return;
+    const opsMin  = opsStart() ?? buf.ts[0];
+    const dataMax = buf.ts[n - 1];
+    const range   = zoomedRange || { min: Math.max(opsMin, dataMax - VIEW_SEC), max: dataMax };
+    const winSize = range.max - range.min;
+    if (winSize <= 0) return;
+    const chartW = chart.over.offsetWidth || 400;
+
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const factor = pinchStartDist / Math.max(dist, 1); // spread fingers = zoom in (factor < 1)
+      pinchStartDist = dist;
+      const rect   = chart.over.getBoundingClientRect();
+      const midX   = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const anchor = range.min + ((midX - rect.left) / chartW) * winSize;
+      let newMin = anchor - (anchor - range.min) * factor;
+      let newMax = anchor + (range.max - anchor) * factor;
+      if (newMax - newMin < 5) return;
+      if (newMin < opsMin)  { newMax = Math.min(dataMax, newMax + (opsMin - newMin));  newMin = opsMin; }
+      if (newMax > dataMax) { newMin = Math.max(opsMin,  newMin - (newMax - dataMax)); newMax = dataMax; }
+      zoomedRange = { min: newMin, max: newMax };
+      resetBtn.style.display = '';
+      pushToCharts();
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const dx = e.touches[0].clientX - t1X;
+      const dy = e.touches[0].clientY - t1Y;
+      // Engage pan only once horizontal intent is clear (avoids hijacking vertical scroll)
+      if (!touchPanning && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) touchPanning = true;
+      if (!touchPanning) return;
+      e.preventDefault();
+      t1X = e.touches[0].clientX;
+      t1Y = e.touches[0].clientY;
+      const panSec = (-dx / chartW) * winSize; // swipe right = earlier data
+      let newMin = range.min + panSec;
+      let newMax = range.max + panSec;
+      if (newMin < opsMin)  { newMax = Math.min(dataMax, newMax + (opsMin - newMin));  newMin = opsMin; }
+      if (newMax > dataMax) { newMin = Math.max(opsMin,  newMin - (newMax - dataMax)); newMax = dataMax; }
+      zoomedRange = { min: newMin, max: newMax };
+      resetBtn.style.display = '';
+      pushToCharts();
+    }
+  }, { passive: false });
+
+  chart.over.addEventListener('touchend', () => { touchPanning = false; });
+
   // ── Scroll-to-pan / pinch-to-zoom ────────────────────────────────────────
   // Trackpad horizontal swipe (deltaX ≠ 0) pans the time window.
   // Ctrl+scroll (macOS pinch gesture) zooms in/out around the cursor.
@@ -826,46 +904,96 @@ function initTTd() {
 }
 
 function initWind() {
-  charts.wind = new uPlot({
-    width: chartWidth(), height: chartHeight(),
-    cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
-    // Two independent y scales: wspd (m/s, autoscaled) and wdir (always 0–360°).
-    scales: { x: xScale(), wspd: {}, wdir: { range: [0, 360] } },
-    axes: [
-      xAxis(),
-      {
-        ...yAxis('wspd', 'm/s', 3, C.wspd),
-        grid: { show: true, stroke: C.grid, width: 1 },
-        // Generate exactly 5 evenly-spaced ticks across the current wspd range,
-        // snapped to the nearest 0.25 so values are always clean decimals.
-        splits: (u) => {
-          const s = u.scales.wspd;
-          const min = s.min ?? 0;
-          const max = s.max ?? 0;
-          const rawStep = (max - min) / 4 || 1;
-          const step = Math.max(0.25, Math.ceil(rawStep / 0.25) * 0.25);
-          return [0, 1, 2, 3, 4].map(i => +((min + i * step).toFixed(4)));
+  if (IS_MOBILE) {
+    // Mobile: two separate single-axis charts for cleaner reading.
+    charts.wspd = new uPlot({
+      width: chartWidth(), height: chartHeight(),
+      cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
+      scales: { x: xScale(), wspd: {} },
+      axes: [
+        xAxis(),
+        {
+          ...yAxis('wspd', 'm/s', 3, C.wspd),
+          grid: { show: true, stroke: C.grid, width: 1 },
+          splits: (u) => {
+            const s = u.scales.wspd;
+            const min = s.min ?? 0;
+            const max = s.max ?? 0;
+            const rawStep = (max - min) / 4 || 1;
+            const step = Math.max(0.25, Math.ceil(rawStep / 0.25) * 0.25);
+            return [0, 1, 2, 3, 4].map(i => +((min + i * step).toFixed(4)));
+          },
         },
-      },
-      {
-        ...yAxis('wdir', 'degrees (˚)', 1, C.wdir),
-        grid: { show: true, stroke: C.grid, width: 1 },
-        values: (u, vals) => vals.map(v => v == null ? '' : v + '°'),
-        splits: () => [0, 90, 180, 270, 360], // cardinal directions only
-      },
-    ],
-    series: [
-      { value: (_u, v) => fmtLocalDateTime(v) },
-      { label: 'Speed', scale: 'wspd', stroke: C.wspd, width: 2, spanGaps: false,
-        value: (_u, v) => v == null ? '' : `${v.toFixed(2)} m/s` },
-      // Wind direction is drawn as dots rather than a connected line — a line
-      // through e.g. 350° → 10° would sweep visually through 180° (south), which
-      // is misleading. Dots make each discrete reading legible without false paths.
-      { label: 'Dir', scale: 'wdir', stroke: C.wdir,
-        paths: () => null, points: { show: true, size: 3, fill: C.wdir, stroke: C.wdir },
-        value: (_u, v) => v == null ? '' : `${v.toFixed(2)}°` },
-    ],
-  }, [[], [], []], document.getElementById('chart-wind'));
+      ],
+      series: [
+        { value: (_u, v) => fmtLocalDateTime(v) },
+        { label: 'Speed', scale: 'wspd', stroke: C.wspd, width: 2, spanGaps: false,
+          value: (_u, v) => v == null ? '' : `${v.toFixed(2)} m/s` },
+      ],
+    }, [[], []], document.getElementById('chart-wspd'));
+
+    charts.wdir = new uPlot({
+      width: chartWidth(), height: chartHeight(),
+      cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
+      scales: { x: xScale(), wdir: { range: [0, 360] } },
+      axes: [
+        xAxis(),
+        {
+          ...yAxis('wdir', 'degrees (˚)', 3, C.wdir),
+          grid: { show: true, stroke: C.grid, width: 1 },
+          values: (u, vals) => vals.map(v => v == null ? '' : v + '°'),
+          splits: () => [0, 90, 180, 270, 360],
+        },
+      ],
+      series: [
+        { value: (_u, v) => fmtLocalDateTime(v) },
+        { label: 'Dir', scale: 'wdir', stroke: C.wdir,
+          paths: () => null, points: { show: true, size: 3, fill: C.wdir, stroke: C.wdir },
+          value: (_u, v) => v == null ? '' : `${v.toFixed(2)}°` },
+      ],
+    }, [[], []], document.getElementById('chart-wdir'));
+  } else {
+    charts.wind = new uPlot({
+      width: chartWidth(), height: chartHeight(),
+      cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
+      // Two independent y scales: wspd (m/s, autoscaled) and wdir (always 0–360°).
+      scales: { x: xScale(), wspd: {}, wdir: { range: [0, 360] } },
+      axes: [
+        xAxis(),
+        {
+          ...yAxis('wspd', 'm/s', 3, C.wspd),
+          grid: { show: true, stroke: C.grid, width: 1 },
+          // Generate exactly 5 evenly-spaced ticks across the current wspd range,
+          // snapped to the nearest 0.25 so values are always clean decimals.
+          splits: (u) => {
+            const s = u.scales.wspd;
+            const min = s.min ?? 0;
+            const max = s.max ?? 0;
+            const rawStep = (max - min) / 4 || 1;
+            const step = Math.max(0.25, Math.ceil(rawStep / 0.25) * 0.25);
+            return [0, 1, 2, 3, 4].map(i => +((min + i * step).toFixed(4)));
+          },
+        },
+        {
+          ...yAxis('wdir', 'degrees (˚)', 1, C.wdir),
+          grid: { show: true, stroke: C.grid, width: 1 },
+          values: (u, vals) => vals.map(v => v == null ? '' : v + '°'),
+          splits: () => [0, 90, 180, 270, 360], // cardinal directions only
+        },
+      ],
+      series: [
+        { value: (_u, v) => fmtLocalDateTime(v) },
+        { label: 'Speed', scale: 'wspd', stroke: C.wspd, width: 2, spanGaps: false,
+          value: (_u, v) => v == null ? '' : `${v.toFixed(2)} m/s` },
+        // Wind direction is drawn as dots rather than a connected line — a line
+        // through e.g. 350° → 10° would sweep visually through 180° (south), which
+        // is misleading. Dots make each discrete reading legible without false paths.
+        { label: 'Dir', scale: 'wdir', stroke: C.wdir,
+          paths: () => null, points: { show: true, size: 3, fill: C.wdir, stroke: C.wdir },
+          value: (_u, v) => v == null ? '' : `${v.toFixed(2)}°` },
+      ],
+    }, [[], [], []], document.getElementById('chart-wind'));
+  }
 }
 
 function initPressure() {
@@ -1040,7 +1168,12 @@ function renderMaxWind() {
 function pushToCharts() {
   if (!charts.ttd) return; // deferred init not yet complete
   charts.ttd.setData([buf.ts, buf.t, buf.td], false);
-  charts.wind.setData([buf.ts, buf.wspd, buf.wdir], false);
+  if (IS_MOBILE) {
+    charts.wspd.setData([buf.ts, buf.wspd], false);
+    charts.wdir.setData([buf.ts, buf.wdir], false);
+  } else {
+    charts.wind.setData([buf.ts, buf.wspd, buf.wdir], false);
+  }
   charts.pressure.setData([buf.ts, buf.pressure], false);
 
   if (zoomedRange) {
@@ -1052,7 +1185,8 @@ function pushToCharts() {
     const wspdRangeZ = paddedRange(minMaxVisible('wspd', zoomedRange.min, zoomedRange.max), 0.15, 0.8);
     if (wspdRangeZ) {
       const stepZ = niceStep((wspdRangeZ.max - 0) / 4, 0.25);
-      charts.wind.setScale('wspd', { min: 0, max: stepZ * 4 });
+      const wspdChart = IS_MOBILE ? charts.wspd : charts.wind;
+      wspdChart.setScale('wspd', { min: 0, max: stepZ * 4 });
     }
   } else if (buf.ts.length >= 1) {
     // Live mode: show a rolling VIEW_SEC-wide window ending at the latest point.
@@ -1076,7 +1210,8 @@ function pushToCharts() {
       const min = 0;
       const step = niceStep((wspdRange.max - min) / 4, 0.25);
       const max = min + step * 4;
-      charts.wind.setScale('wspd', { min, max });
+      const wspdChart = IS_MOBILE ? charts.wspd : charts.wind;
+      wspdChart.setScale('wspd', { min, max });
     }
     const pRange = paddedRange(minMaxVisible('pressure', xMin, xMax), 0.04, 0.8);
     if (pRange) charts.pressure.setScale('y', pRange);
@@ -1312,11 +1447,24 @@ drawCompass(null);
 // .chart-wrap elements have their CSS-determined clientWidth/clientHeight
 // available for chartWidth() and chartHeight() to read.
 requestAnimationFrame(() => {
+  if (IS_MOBILE) {
+    document.getElementById('card-wind-combined').style.display = 'none';
+    document.querySelectorAll('.mobile-only').forEach(el => { el.style.display = ''; });
+  }
+  const hintText = IS_MOBILE
+    ? 'swipe to pan · pinch to zoom · double-tap to reset'
+    : 'drag to zoom · scroll to pan · double-click to reset';
+  document.querySelectorAll('.zoom-hint').forEach(el => { el.textContent = hintText; });
   initTTd();
   initWind();
   initPressure();
   addZoomListeners(charts.ttd);
-  addZoomListeners(charts.wind);
+  if (IS_MOBILE) {
+    addZoomListeners(charts.wspd);
+    addZoomListeners(charts.wdir);
+  } else {
+    addZoomListeners(charts.wind);
+  }
   addZoomListeners(charts.pressure);
 
   // ── Responsive resize ──────────────────────────────────────────────────────
