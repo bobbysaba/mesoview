@@ -101,7 +101,6 @@ _CFG = _load_config()  # loaded once at startup; restart viewer to pick up confi
 
 # Update DATA_DIR to match DATA_DIR in mesoingest.py
 DATA_DIR      = Path(_CFG.get('data_dir', str(Path.home() / 'data' / 'raw' / 'mesonet'))).expanduser()
-WINDOW        = 600          # records of history served on /initial (~10 min) — unused since cache covers 2 hours
 UPLOT_VERSION = '1.6.31'     # pinned version of the uPlot charting library; update here to upgrade
 HTTP_PORT     = int(_CFG.get('http_port', 8080))
 MDNS_HOSTNAME = _CFG.get('mdns_hostname', 'mesoview')  # advertised as <hostname>.local on the LAN
@@ -139,7 +138,8 @@ def ensure_uplot():
         if not dst.exists():  # only download if the file isn't already cached locally
             try:
                 _log(f'Downloading {fname}...')
-                urllib.request.urlretrieve(url, dst)
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    dst.write_bytes(resp.read())
                 _log(f'Saved {dst}')
             except Exception as e:
                 _log(f'Warning: could not fetch {fname}: {e}')  # non-fatal; dashboard will load from CDN instead
@@ -303,7 +303,7 @@ def _cache_worker():
                 lines = fh.readlines()
                 pos = fh.tell()       # save position so next iteration continues from here
             for line in lines:
-                p = parse_row(line.strip().split(','))
+                p = parse_row(next(csv.reader([line.strip()]), []))
                 if p:
                     with _data_lock:
                         _data_buf.append(p)  # add new point to the rolling cache
@@ -420,7 +420,7 @@ def stream():
                     lines = fh.readlines()
                     pos = fh.tell()       # save position for the next iteration
                 for line in lines:
-                    p = parse_row(line.strip().split(','))
+                    p = parse_row(next(csv.reader([line.strip()]), []))
                     if p:
                         yield f'data: {json.dumps(p)}\n\n'  # push the new point to the browser
 
@@ -460,16 +460,10 @@ def update():
         return jsonify({'ok': False, 'output': str(e), 'changed': False})
 
     if changed:
-        def restart():
+        def _exit():
             time.sleep(0.5)  # brief delay so this HTTP response can finish before we exit
-            # spawn a new shell that waits for this process to fully exit (freeing the port),
-            # then re-launches mesoview.py with the same arguments using exec (replaces the shell process)
-            subprocess.Popen(
-                ['sh', '-c', 'sleep 1 && exec "$@"', '--', sys.executable] + sys.argv,
-                close_fds=True,  # close file descriptors so the child doesn't inherit the Flask socket
-            )
-            os._exit(0)  # exit immediately without running atexit handlers, which could block the port release
-        threading.Thread(target=restart, daemon=True).start()
+            os._exit(42)  # sentinel code — supervisor will restart all children with new code
+        threading.Thread(target=_exit, daemon=True).start()
 
     return jsonify({'ok': result.returncode == 0, 'output': output, 'changed': changed})
 

@@ -36,7 +36,8 @@ from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
-RESTART_DELAY_SEC = 2  # seconds to wait between terminate() and kill() during restarts
+RESTART_DELAY_SEC = 2   # seconds to wait between terminate() and kill() during restarts
+UPDATE_EXIT_CODE  = 42  # mesoview exits with this code after a successful git pull to trigger a full restart
 
 
 def _load_config() -> dict:
@@ -141,6 +142,38 @@ def _preflight(log_fh, cfg: dict) -> None:
         else:
             _log(log_fh, f'  WARN  SSH key not found: {key}')
             _log(log_fh, f'       Copy clamps_rsa to {key} — mesosync will not connect until this is done')
+
+    # Check 4 — Git update check (fetch remote, pull if behind)
+    repo_dir = Path(__file__).parent
+    try:
+        subprocess.run(
+            ['git', 'fetch', '--quiet'],
+            cwd=repo_dir, capture_output=True, text=True, timeout=15,
+        )
+        local_sha = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        remote_sha = subprocess.run(
+            ['git', 'rev-parse', '@{u}'],
+            cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if local_sha and remote_sha and local_sha != remote_sha:
+            _log(log_fh, f'  INFO  update available — running git pull...')
+            result = subprocess.run(
+                ['git', 'pull'],
+                cwd=repo_dir, capture_output=True, text=True, timeout=30,
+            )
+            for line in (result.stdout + result.stderr).strip().splitlines():
+                _log(log_fh, f'        {line}')
+            if result.returncode == 0:
+                _log(log_fh, f'  PASS  git pull succeeded')
+            else:
+                _log(log_fh, f'  WARN  git pull failed (rc={result.returncode})')
+        else:
+            _log(log_fh, f'  PASS  software up to date ({local_sha[:7] if local_sha else "unknown"})')
+    except Exception as e:
+        _log(log_fh, f'  WARN  could not check for updates: {e}')
 
     _log(log_fh, '========================')
 
@@ -248,10 +281,25 @@ def main() -> int:
             for child in children:
                 rc = child.poll()     # None = still running; any integer = process has exited
                 if rc is not None:
-                    # child exited unexpectedly — log the exit code and restart it
-                    _log(log_fh, f'{child.name} exited with {rc}; restarting in {RESTART_DELAY_SEC}s')
-                    time.sleep(RESTART_DELAY_SEC)
-                    child.start(log_fh)
+                    if rc == UPDATE_EXIT_CODE:
+                        # mesoview pulled new code and signalled a full update — restart all children
+                        _log(log_fh, f'{child.name} exited with update code ({rc}); restarting all children')
+                        time.sleep(RESTART_DELAY_SEC)
+                        for c in children:
+                            if c is not child:
+                                c.terminate()
+                        time.sleep(RESTART_DELAY_SEC)
+                        for c in children:
+                            if c is not child:
+                                c.kill()
+                        for c in children:
+                            _log(log_fh, f'starting {c.name}: {c.cmd}')
+                            c.start(log_fh)
+                    else:
+                        # child exited unexpectedly — log the exit code and restart it
+                        _log(log_fh, f'{child.name} exited with {rc}; restarting in {RESTART_DELAY_SEC}s')
+                        time.sleep(RESTART_DELAY_SEC)
+                        child.start(log_fh)
 
             time.sleep(1)  # poll children once per second; low CPU overhead
 

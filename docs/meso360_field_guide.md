@@ -285,10 +285,13 @@ Before launching any child processes, `supervisor.py` runs a set of startup chec
 [2025-06-05 17:52:28] [supervisor]   PASS  config file found: /path/to/meso360/mesoview.config.json
 [2025-06-05 17:52:28] [supervisor]   PASS  data directory writable: /home/user/data/raw/mesonet
 [2025-06-05 17:52:28] [supervisor]   PASS  SSH key found: /home/user/.ssh/clamps_rsa
-[2025-06-05 17:52:28] [supervisor] ========================
+[2025-06-05 17:52:29] [supervisor]   PASS  software up to date (a1b2c3d)
+[2025-06-05 17:52:29] [supervisor] ========================
 ```
 
-All three checks should show `PASS` before a field deployment. A `WARN` indicates something that needs attention — the system will still start, but the affected component may not function correctly.
+All four checks should show `PASS` before a field deployment. A `WARN` indicates something that needs attention — the system will still start, but the affected component may not function correctly.
+
+The fourth check (`software up to date`) runs `git fetch` and pulls any new commits before children start. If an update is pulled, the git output is logged in place of "up to date". A `WARN` on this check means the network was unreachable or the pull failed — children will still start on the current code.
 
 ---
 
@@ -471,7 +474,7 @@ In the bottom-right corner of the dashboard, a small indicator shows the git sta
 | State | Appearance | Meaning |
 |-------|------------|---------|
 | Up to date | Hidden | Nothing to do |
-| Update available | `↑ Update · <commit>` button | Remote repository has new commits. Click to run `git pull` and restart mesoview automatically. |
+| Update available | `↑ Update · <commit>` button | Remote repository has new commits. Click to run `git pull` and restart all components automatically. |
 | DEV badge | Orange `DEV` badge | Repo has uncommitted local changes. The Update button is hidden to avoid overwriting local work. |
 
 ---
@@ -727,20 +730,25 @@ To check that it is running: open **Task Manager** → **Details** → look for 
 
 ### Using the Dashboard
 
-If the remote repository has new commits, an `↑ Update · <commit>` button appears in the bottom-right corner of the dashboard. Clicking it:
+If the remote repository has new commits while the system is running, an `↑ Update · <commit>` button appears in the bottom-right corner of the dashboard. Clicking it:
 
 1. Runs `git pull` in the repo directory
 2. Shows the git output on screen
-3. If new commits were downloaded, automatically restarts mesoview within a few seconds
-4. The browser reloads once mesoview is back up
+3. If new commits were downloaded, signals the supervisor to restart **all three components** (mesoingest, mesoview, mesosync) within a few seconds
+4. The browser reconnects and reloads automatically
 
-> **Note:** The dashboard update button only restarts mesoview. If `supervisor.py` or `mesoingest.py` changed, restart the full supervisor manually for those changes to take effect.
+This applies to fixes in any file — no SSH access required.
 
-### Manual Update
+### At Startup
+
+The supervisor automatically pulls any available updates during the preflight phase before children start. If you know an update has been pushed, simply restart the supervisor and it will pick it up.
+
+### New Dependencies
+
+If a pull adds new Python packages, update the environment manually after the pull:
 
 ```bash
-git pull
-conda env update -f environment.yml --prune   # pick up any new dependencies
+conda env update -f environment.yml --prune
 ```
 
 Then restart supervisor:

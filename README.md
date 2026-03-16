@@ -129,8 +129,11 @@ On startup, supervisor runs a set of preflight checks before launching any child
 [supervisor]   PASS  config file found: .../mesoview.config.json
 [supervisor]   PASS  data directory writable: ~/data/raw/mesonet
 [supervisor]   PASS  SSH key found: ~/.ssh/clamps_rsa
+[supervisor]   PASS  software up to date (a1b2c3d)
 [supervisor] ========================
 ```
+
+The fourth check fetches the remote and pulls any new commits automatically before children start — so the system always boots on the latest code. If an update is pulled, the output shows the git log instead of "up to date".
 
 Any issue that needs user action appears as `WARN` with an explanation and the exact command or step to resolve it. All warnings are non-blocking — supervisor still starts, and each component handles its own retry logic.
 
@@ -308,12 +311,17 @@ To test without rebooting: right-click the task → **Run**.
 
 ## Updating
 
+**At startup:** supervisor automatically runs `git pull` as part of the preflight checks, so the system always boots on the latest code. No manual action needed.
+
+**Mid-operations:** if an update is available while the system is running, an `↑ Update · <commit>` button appears in the bottom-right corner of the dashboard. Clicking it pulls the latest code and restarts all three components (mesoingest, mesoview, mesosync) within a few seconds. The dashboard reconnects automatically.
+
+**New dependencies:** if a pull adds new Python packages, update the environment manually:
+
 ```bash
-git pull
-conda env update -f environment.yml --prune   # pick up any new dependencies
+conda env update -f environment.yml --prune
 ```
 
-No other steps needed — the config file is not touched by git updates.
+The config file (`mesoview.config.json`) is never modified by a git update.
 
 ---
 
