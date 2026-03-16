@@ -28,9 +28,12 @@ parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--test', action='store_true', help='Run in test/replay mode')
 parser.add_argument('--test-start-offset', type=int, default=0,
                     help='(test mode) seconds after first data point to start replay')
+parser.add_argument('--no-browser', action='store_true',
+                    help='Skip opening a browser tab on startup (used by supervisor on restarts)')
 args, _ = parser.parse_known_args()
 TEST_MODE = args.test
 TEST_START_OFFSET = max(0, args.test_start_offset or 0)  # clamp to 0 so a negative offset is treated as 0
+NO_BROWSER = args.no_browser
 
 TEST_FILE = Path(__file__).parent / 'test_data' / 'test.txt'  # sample data file used in --test mode
 
@@ -478,10 +481,13 @@ if __name__ == '__main__':
     local_ip = get_local_ip()
     url = f'http://{local_ip}:{HTTP_PORT}'
     _log(f'Starting MM Viewer — open {url}')
-    try:
-        webbrowser.open(url, new=2)  # new=2 opens in a new browser tab rather than a new window
-    except Exception as e:
-        _log(f'Warning: could not open browser: {e}')  # non-fatal; user can open the URL manually
+    if NO_BROWSER:
+        _log('--no-browser set; skipping automatic tab open')
+    else:
+        try:
+            webbrowser.open(url, new=2)  # new=2 opens in a new browser tab rather than a new window
+        except Exception as e:
+            _log(f'Warning: could not open browser: {e}')  # non-fatal; user can open the URL manually
     # host='0.0.0.0' binds to all interfaces so devices on the LAN can connect, not just localhost
     # threaded=True allows Flask to handle multiple SSE clients simultaneously without blocking
     app.run(host='0.0.0.0', port=HTTP_PORT, debug=False, threaded=True)
