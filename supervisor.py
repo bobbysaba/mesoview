@@ -32,6 +32,7 @@ import signal     # used to catch SIGINT (Ctrl-C) and SIGTERM so we can shut dow
 import subprocess
 import sys
 import time
+import atexit
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
@@ -95,8 +96,7 @@ def _build_rtun_cmd(port: int) -> str:
     key_str = f'"{key}"' if os.name == 'nt' else shlex.quote(str(key))
     return (
         f'ssh -q -N '                        # -q = quiet (suppress banners), -N = no remote command (tunnel only)
-        f'-L {port}:localhost:22 '           # forward local port → remote machine (allows inbound SSH to this host)
-        f'-R {port}:localhost:22 '           # forward remote port → this machine (allows remote to reach us)
+        f'-R {port}:localhost:22 '           # reverse-tunnel: bind port on remote → forward to localhost:22 here
         f'-o TCPKeepAlive=yes '              # send TCP keepalives so the connection isn't dropped by firewalls/NAT
         f'-o ServerAliveCountMax=3 '         # disconnect after 3 missed keepalive responses
         f'-o ServerAliveInterval=10 '        # send a keepalive every 10 seconds
@@ -197,28 +197,53 @@ class Child:
         # Windows requires shell=True to resolve executables via PATH; Unix passes a pre-split arg list
         if os.name == 'nt':
             self.proc = subprocess.Popen(
-                cmd, shell=True, stdout=log_fh, stderr=log_fh,
+                cmd,
+                shell=True,
+                stdout=log_fh,
+                stderr=log_fh,
+                creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0),
             )
         else:
             self.proc = subprocess.Popen(
-                _split_cmd(cmd), stdout=log_fh, stderr=log_fh,  # stdout+stderr both go to the shared log file
+                _split_cmd(cmd),
+                stdout=log_fh,
+                stderr=log_fh,  # stdout+stderr both go to the shared log file
+                start_new_session=True,  # put each child in its own process group so shutdown can target the whole tree
             )
 
     def poll(self) -> Optional[int]:
         # returns the exit code if the process has ended, or None if it's still running
         return self.proc.poll() if self.proc else None
 
+    def _signal_group(self, sig: int) -> None:
+        if not self.proc or self.proc.poll() is not None:
+            return
+        try:
+            if os.name == 'nt':
+                if sig == signal.SIGTERM and hasattr(signal, 'CTRL_BREAK_EVENT'):
+                    self.proc.send_signal(signal.CTRL_BREAK_EVENT)
+                else:
+                    self.proc.kill()
+            else:
+                os.killpg(self.proc.pid, sig)
+        except Exception:
+            pass  # ignore errors if the process already exited or the platform doesn't support the signal
+
     def terminate(self) -> None:
-        # sends SIGTERM (Unix) or TerminateProcess (Windows); gives the process a chance to clean up
-        if self.proc:
-            try: self.proc.terminate()
-            except Exception: pass  # ignore errors if the process already exited
+        # terminate the whole child process group, not just the direct child, so helpers don't get orphaned
+        self._signal_group(signal.SIGTERM)
 
     def kill(self) -> None:
-        # sends SIGKILL (Unix) or forcefully terminates (Windows); used as a fallback after terminate()
-        if self.proc:
-            try: self.proc.kill()
-            except Exception: pass  # ignore errors if the process already exited
+        # force-kill the entire child process group after the grace period expires
+        self._signal_group(signal.SIGKILL if os.name != 'nt' else signal.SIGTERM)
+
+
+def _stop_children(children: List[Child], grace_sec: float = 1.0) -> None:
+    for child in children:
+        child.terminate()
+    time.sleep(grace_sec)
+    for child in children:
+        child.kill()
 
 
 def main() -> int:
@@ -249,11 +274,25 @@ def main() -> int:
         _log(log_fh, 'rtun_port not set in config — SSH tunnel disabled')
 
     stop = False  # set to True by the signal handler to break the main loop
+    shutting_down = False
 
     def _handle_signal(signum, _frame):
         nonlocal stop  # nonlocal lets the nested function write to the enclosing scope's 'stop' variable
         _log(log_fh, f'received signal {signum}, shutting down')
         stop = True  # main loop will exit on the next iteration
+
+    def _cleanup() -> None:
+        nonlocal shutting_down
+        if shutting_down:
+            return
+        shutting_down = True
+        try:
+            _log(log_fh, 'shutting down children')
+        except Exception:
+            pass
+        _stop_children(children)
+
+    atexit.register(_cleanup)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
@@ -275,11 +314,7 @@ def main() -> int:
                 log_fh.close()
                 log_fh, log_date = _open_log(log_dir)
                 _log(log_fh, f'new log: {log_fh.name}')
-                for child in children:
-                    child.terminate()         # ask each child to exit gracefully
-                time.sleep(RESTART_DELAY_SEC) # give them a moment to flush and exit
-                for child in children:
-                    child.kill()              # force-kill any that didn't respond to terminate()
+                _stop_children(children, grace_sec=RESTART_DELAY_SEC)
                 for child in children:
                     # restart each child with the new log file handle so output goes to today's log
                     _log(log_fh, f'starting {child.name}: {child.cmd}')
@@ -293,13 +328,7 @@ def main() -> int:
                         # mesoview pulled new code and signalled a full update — restart all children
                         _log(log_fh, f'{child.name} exited with update code ({rc}); restarting all children')
                         time.sleep(RESTART_DELAY_SEC)
-                        for c in children:
-                            if c is not child:
-                                c.terminate()
-                        time.sleep(RESTART_DELAY_SEC)
-                        for c in children:
-                            if c is not child:
-                                c.kill()
+                        _stop_children([c for c in children if c is not child], grace_sec=RESTART_DELAY_SEC)
                         for c in children:
                             _log(log_fh, f'starting {c.name}: {c.cmd}')
                             c.start(log_fh)
@@ -313,12 +342,8 @@ def main() -> int:
 
     finally:
         # reached on clean shutdown (stop=True) or unhandled exception
-        _log(log_fh, 'shutting down children')
-        for child in children:
-            child.terminate()   # polite shutdown first
-        time.sleep(1)           # brief grace period for children to exit
-        for child in children:
-            child.kill()        # force-kill anything still running
+        _cleanup()
+        atexit.unregister(_cleanup)
         log_fh.close()
 
     return 0

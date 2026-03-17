@@ -1,0 +1,13 @@
+[2026-03-17 21:36:56] [supervisor] starting — log: /Users/robert.saba/Documents/meso360/.tmphome/mesoview_logs/mesoview.20260317.log
+[2026-03-17 21:36:56] [supervisor] === Preflight checks ===
+[2026-03-17 21:36:56] [supervisor]   WARN  config file not found: /Users/robert.saba/Documents/meso360/meso360.config.json
+[2026-03-17 21:36:56] [supervisor]        Run: cp meso360.config.example.json meso360.config.json
+[2026-03-17 21:36:56] [supervisor]   PASS  data directory writable: /Users/robert.saba/Documents/meso360/.tmphome/data/raw/mesonet
+[2026-03-17 21:36:56] [supervisor]   WARN  local git changes detected; skipping automatic git pull
+[2026-03-17 21:36:56] [supervisor]        Commit or discard local edits before updating from remote
+[2026-03-17 21:36:56] [supervisor] ========================
+[2026-03-17 21:36:56] [supervisor] rtun_port not set in config — SSH tunnel disabled
+[2026-03-17 21:36:56] [supervisor] starting mesoingest: /bin/sh -c 'while true; do date +%s >> /Users/robert.saba/Documents/meso360/ingest.hb; sleep 1; done'
+[2026-03-17 21:36:56] [supervisor] starting mesoview: /bin/sh -c 'while true; do date +%s >> /Users/robert.saba/Documents/meso360/viewer.hb; sleep 1; done'
+[2026-03-17 21:37:03] [supervisor] received signal 2, shutting down
+[2026-03-17 21:37:04] [supervisor] shutting down children
