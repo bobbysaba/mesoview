@@ -181,17 +181,18 @@ def _preflight(log_fh, cfg: dict) -> None:
 
 
 class Child:
-    def __init__(self, name: str, cmd: str):
+    def __init__(self, name: str, cmd: str, restart_arg: str = ''):
         self.name        = name                          # human-readable label used in log messages
         self.cmd         = cmd                           # full shell command string for this process
+        self.restart_arg = restart_arg                   # optional extra arg appended only on restarts
         self.proc: Optional[subprocess.Popen] = None    # set when the process is running; None otherwise
         self._start_count = 0                            # incremented each time start() is called
 
     def start(self, log_fh) -> None:
         self._start_count += 1
-        # On restarts (start_count > 1) tell mesoview not to open a new browser tab — the existing
-        # tab either reloads itself (update flow) or auto-reconnects via SSE retry (crash flow).
-        extra = ' --no-browser' if self._start_count > 1 else ''
+        # On restarts tell mesoview not to open a new browser tab — the existing tab either
+        # reloads itself (update flow) or auto-reconnects via SSE retry (crash flow).
+        extra = f' {self.restart_arg}' if self._start_count > 1 and self.restart_arg else ''
         cmd = self.cmd + extra
         # Windows requires shell=True to resolve executables via PATH; Unix passes a pre-split arg list
         if os.name == 'nt':
@@ -231,7 +232,7 @@ def main() -> int:
     ingest_cmd, viewer_cmd = _default_cmds()
     children: List[Child] = [
         Child('mesoingest', ingest_cmd),
-        Child('mesoview',   viewer_cmd),
+        Child('mesoview',   viewer_cmd, restart_arg='--no-browser'),
     ]
 
     # validate rtun_port before using it — a bad value in config should disable the tunnel, not crash the supervisor
