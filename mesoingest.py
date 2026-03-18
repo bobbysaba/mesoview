@@ -20,6 +20,7 @@ def _log(msg):
     print(f'[{ts}] [mesoingest] {msg}', flush=True)  # flush=True ensures output appears immediately in the supervisor log
 
 _CFG = load_config(_log)
+_SESSION = requests.Session()  # reuses HTTP connections across 1 Hz polls when the datalogger supports keep-alive
 
 # set vehicle-specific variables
 DATA_DIR = Path(_CFG.get('data_dir', str(DEFAULT_DATA_DIR))).expanduser()  # where daily .txt files are written
@@ -48,14 +49,15 @@ class TableParser(HTMLParser):
             self.values.append(data.strip())  # only capture text that is inside a <td>
 
 
-def fetch_record(ip, max_tries=100, retry_delay=5):
+def fetch_record(ip, max_tries=100, retry_delay=5, session=None):
     """Fetch the newest mesonet record from the datalogger web interface."""
     # the datalogger serves its most recent observation via this URL pattern
     url = f'http://{ip}/command=NewestRecord&table=Obs'
+    session = session or _SESSION
 
     for attempt in range(1, max_tries + 1):
         try:
-            resp = requests.get(url, timeout=5)  # 5-second timeout; datalogger is on LAN so this is generous
+            resp = session.get(url, timeout=5)  # reuse the same HTTP session so repeated polls can keep the TCP connection warm
             resp.raise_for_status()              # raise immediately on 4xx/5xx HTTP errors
 
             parser = TableParser()
@@ -107,7 +109,7 @@ def main_loop():
         start = dt.datetime.now(timezone.utc)  # record loop start time to enforce 1 Hz cadence
 
         # fetch and parse
-        raw = fetch_record(IP, max_tries=MAX_TRIES, retry_delay=RETRY_DELAY)
+        raw = fetch_record(IP, max_tries=MAX_TRIES, retry_delay=RETRY_DELAY, session=_SESSION)
         try:
             data_line = parse_record(raw)
         except Exception as e:

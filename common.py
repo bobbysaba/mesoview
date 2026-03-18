@@ -28,6 +28,10 @@ def load_config(log: Callable[[str], None] | None = None) -> dict:
     try:
         with open(CONFIG_PATH) as f:
             return json.load(f) or {}
+    except json.JSONDecodeError as e:
+        if log is not None:
+            log(f'ERROR: config file {CONFIG_PATH} contains invalid JSON: {e} — using defaults')
+        return {}
     except Exception as e:
         if log is not None:
             log(f'Warning: could not read config {CONFIG_PATH}: {e}')

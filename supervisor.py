@@ -57,7 +57,11 @@ def _open_log(log_dir: Path) -> tuple[object, date]:
     log_dir.mkdir(parents=True, exist_ok=True)
     today = date.today()
     log_path = log_dir / f'mesoview.{today.strftime("%Y%m%d")}.log'
-    fh = open(log_path, 'a', buffering=1)  # buffering=1 = line-buffered: each line is flushed immediately
+    try:
+        fh = open(log_path, 'a', buffering=1)  # buffering=1 = line-buffered: each line is flushed immediately
+    except OSError as e:
+        print(f'[supervisor] WARNING: could not open log file {log_path}: {e}; falling back to stderr', flush=True)
+        fh = sys.stderr
     return fh, today  # return today's date so the main loop can detect when midnight rolls over
 
 

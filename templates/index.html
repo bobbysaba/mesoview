@@ -67,6 +67,15 @@
       color: var(--subtext);
     }
 
+    #status-msg {
+      display: none;              /* hidden during normal live operation */
+      color: var(--subtext);
+      white-space: nowrap;
+    }
+    #status-msg.show { display: inline; }
+    #status-msg.stale { color: var(--wdir); }
+    #status-msg.off   { color: var(--t); }
+
     #conn-dot {
       width: 8px; height: 8px;
       border-radius: 50%;          /* makes the square element a circle */
@@ -380,6 +389,7 @@
   <div id="status-bar">
     <span id="conn-dot"></span>              <!-- colored dot: green=live, orange=stale, red=disconnected -->
     <span id="last-update">--:--:-- UTC</span>  <!-- timestamp of the last received data point -->
+    <span id="status-msg" aria-live="polite"></span>  <!-- shown only when data is stale or the viewer disconnects -->
     <button id="reset-btn">Reset Zoom</button>   <!-- hidden by default; JS shows it when the user zooms -->
     <button id="live-btn">Pause</button>
   </div>
@@ -590,11 +600,54 @@ let zoomedRange = null; // null = live/auto-advance; {min, max} = x window locke
 let maxWind = { wspd: null, ts: null, lat: null, lon: null, resetTs: null };
 
 const resetBtn = document.getElementById('reset-btn');
+const els = {
+  compassCanvas: document.getElementById('compass-canvas'),
+  lastUpdate: document.getElementById('last-update'),
+  connDot: document.getElementById('conn-dot'),
+  statusMsg: document.getElementById('status-msg'),
+  liveBtn: document.getElementById('live-btn'),
+  maxwindResetBtn: document.getElementById('maxwind-reset-btn'),
+  cvT: document.getElementById('cv-t'),
+  cvTd: document.getElementById('cv-td'),
+  cvPressure: document.getElementById('cv-pressure'),
+  cvWspd: document.getElementById('cv-wspd'),
+  cvWdir: document.getElementById('cv-wdir'),
+  cvThetae: document.getElementById('cv-thetae'),
+  compassDeg: document.getElementById('compass-deg'),
+  compassWnd: document.getElementById('compass-wnd'),
+  avgT: document.getElementById('avg-t'),
+  avgTd: document.getElementById('avg-td'),
+  avgPressure: document.getElementById('avg-pressure'),
+  avgWspd: document.getElementById('avg-wspd'),
+  avgWdir: document.getElementById('avg-wdir'),
+  avgThetae: document.getElementById('avg-thetae'),
+  statLast: document.getElementById('stat-last'),
+  statGaps: document.getElementById('stat-gaps'),
+  statComp: document.getElementById('stat-comp'),
+  statPtrend: document.getElementById('stat-ptrend'),
+  statGps: document.getElementById('stat-gps'),
+  statAge: document.getElementById('stat-age'),
+  mwWspd: document.getElementById('mw-wspd'),
+  mwTime: document.getElementById('mw-time'),
+  mwLat: document.getElementById('mw-lat'),
+  mwLon: document.getElementById('mw-lon'),
+  updateBtn: document.getElementById('update-btn'),
+  updateOverlay: document.getElementById('update-overlay'),
+  devBadge: document.getElementById('dev-badge'),
+  chartWrap: document.querySelector('.chart-wrap'),
+  chartsCol: document.querySelector('#charts-col'),
+  cardWindCombined: document.getElementById('card-wind-combined'),
+  mobileOnlyCards: document.querySelectorAll('.mobile-only'),
+  zoomHints: document.querySelectorAll('.zoom-hint'),
+};
+
+let chartSizeCache = { width: 400, height: 200 };
+let pushPending = false;
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
 function chartWidth() {
   // Read the actual pixel width from the flex-1 chart-wrap after CSS layout.
-  const wrap = document.querySelector('.chart-wrap');
+  const wrap = els.chartWrap;
   return Math.max(300, wrap ? wrap.clientWidth : 400);
 }
 
@@ -602,9 +655,20 @@ function chartHeight() {
   // Read the actual pixel height from the flex-1 chart-wrap after CSS layout.
   // The wrap is a flex child of its card and gets exactly the space left over
   // after the card title, zoom hint, and padding are rendered.
-  const wrap = document.querySelector('.chart-wrap');
+  const wrap = els.chartWrap;
   const legendReserve = IS_MOBILE ? 42 : 28;
   return Math.max(100, wrap ? wrap.clientHeight - legendReserve : 200);
+}
+
+function measureChartSize() {
+  chartSizeCache = { width: chartWidth(), height: chartHeight() };
+  return chartSizeCache;
+}
+
+function getChartList() {
+  return IS_MOBILE
+    ? [charts.ttd, charts.wspd, charts.wdir, charts.pressure].filter(Boolean)
+    : [charts.ttd, charts.wind, charts.pressure].filter(Boolean);
 }
 
 // Formats a Unix-second timestamp as a local date/time string for uPlot cursor tooltips.
@@ -685,20 +749,39 @@ function minMax(arr) {
   return { min, max };
 }
 
-// Like minMax but only scans buf entries whose timestamp falls within [xMin, xMax].
-// Scans backwards from the end of buf so it stops quickly — O(visible points), not O(MAX_PTS).
-function minMaxVisible(key, xMin, xMax) {
-  let min = Infinity, max = -Infinity;
+function updateMinMaxVisible(mm, value) {
+  if (value == null || Number.isNaN(value)) return;
+  if (value < mm.min) mm.min = value;
+  if (value > mm.max) mm.max = value;
+}
+
+function finalizeMinMax(mm) {
+  return mm.min === Infinity ? null : mm;
+}
+
+// Scans the visible window once and returns min/max values for all plotted fields.
+function visibleRanges(xMin, xMax) {
+  const ranges = {
+    t: { min: Infinity, max: -Infinity },
+    td: { min: Infinity, max: -Infinity },
+    wspd: { min: Infinity, max: -Infinity },
+    pressure: { min: Infinity, max: -Infinity },
+  };
   for (let i = buf.ts.length - 1; i >= 0; i--) {
-    if (buf.ts[i] < xMin) break;
-    if (buf.ts[i] > xMax) continue;
-    const v = buf[key][i];
-    if (v == null || Number.isNaN(v)) continue;
-    if (v < min) min = v;
-    if (v > max) max = v;
+    const ts = buf.ts[i];
+    if (ts < xMin) break;
+    if (ts > xMax) continue;
+    updateMinMaxVisible(ranges.t, buf.t[i]);
+    updateMinMaxVisible(ranges.td, buf.td[i]);
+    updateMinMaxVisible(ranges.wspd, buf.wspd[i]);
+    updateMinMaxVisible(ranges.pressure, buf.pressure[i]);
   }
-  if (min === Infinity) return null;
-  return { min, max };
+  return {
+    t: finalizeMinMax(ranges.t),
+    td: finalizeMinMax(ranges.td),
+    wspd: finalizeMinMax(ranges.wspd),
+    pressure: finalizeMinMax(ranges.pressure),
+  };
 }
 
 // Returns the timestamp of the first data point in the current operations day.
@@ -747,7 +830,7 @@ function niceStep(val, base = 0.5) {
 // Called from the Reset Zoom button and from double-click on any chart canvas.
 function resetZoom() {
   zoomedRange = null;
-  pushToCharts();
+  schedulePushToCharts();
   resetBtn.style.display = 'none';
 }
 
@@ -846,7 +929,7 @@ function addZoomListeners(chart) {
       if (newMax > dataMax) { newMin = Math.max(opsMin,  newMin - (newMax - dataMax)); newMax = dataMax; }
       zoomedRange = { min: newMin, max: newMax };
       resetBtn.style.display = '';
-      pushToCharts();
+      schedulePushToCharts();
       return;
     }
 
@@ -866,7 +949,7 @@ function addZoomListeners(chart) {
       if (newMax > dataMax) { newMin = Math.max(opsMin,  newMin - (newMax - dataMax)); newMax = dataMax; }
       zoomedRange = { min: newMin, max: newMax };
       resetBtn.style.display = '';
-      pushToCharts();
+      schedulePushToCharts();
     }
   }, { passive: false });
 
@@ -920,7 +1003,7 @@ function addZoomListeners(chart) {
 
     zoomedRange = { min: newMin, max: newMax };
     resetBtn.style.display = ''; // show Reset Zoom once we've panned/zoomed
-    pushToCharts();
+    schedulePushToCharts();
   }, { passive: false });
 }
 
@@ -931,8 +1014,9 @@ function addZoomListeners(chart) {
 // of connecting across the dropout.
 
 function initTTd() {
+  const size = chartSizeCache;
   charts.ttd = new uPlot({
-    width: chartWidth(), height: chartHeight(),
+    width: size.width, height: size.height,
     cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
     scales: { x: xScale() },
     axes:   [ xAxis(), yAxis('y', '°C', 3, C.text) ],
@@ -947,10 +1031,11 @@ function initTTd() {
 }
 
 function initWind() {
+  const size = chartSizeCache;
   if (IS_MOBILE) {
     // Mobile: two separate single-axis charts for cleaner reading.
     charts.wspd = new uPlot({
-      width: chartWidth(), height: chartHeight(),
+      width: size.width, height: size.height,
       cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
       scales: { x: xScale(), wspd: {} },
       axes: [
@@ -976,7 +1061,7 @@ function initWind() {
     }, [[], []], document.getElementById('chart-wspd'));
 
     charts.wdir = new uPlot({
-      width: chartWidth(), height: chartHeight(),
+      width: size.width, height: size.height,
       cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
       scales: { x: xScale(), wdir: { range: [0, 360] } },
       axes: [
@@ -997,7 +1082,7 @@ function initWind() {
     }, [[], []], document.getElementById('chart-wdir'));
   } else {
     charts.wind = new uPlot({
-      width: chartWidth(), height: chartHeight(),
+      width: size.width, height: size.height,
       cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
       // Two independent y scales: wspd (m/s, autoscaled) and wdir (always 0–360°).
       scales: { x: xScale(), wspd: {}, wdir: { range: [0, 360] } },
@@ -1040,8 +1125,9 @@ function initWind() {
 }
 
 function initPressure() {
+  const size = chartSizeCache;
   charts.pressure = new uPlot({
-    width: chartWidth(), height: chartHeight(),
+    width: size.width, height: size.height,
     cursor: { drag: { x: true, y: false }, sync: { key: 'main' } },
     scales: { x: xScale() },
     axes:   [ xAxis(), yAxis('y', 'hPa', 3, C.text) ],
@@ -1097,12 +1183,12 @@ function updateAvgPills() {
 
   const the = calcThetaE(t, td, p);
 
-  document.getElementById('avg-t').textContent        = t    != null ? `${t.toFixed(2)} °C / ${(t * 9/5 + 32).toFixed(2)} °F` : '--';
-  document.getElementById('avg-td').textContent       = td   != null ? `${td.toFixed(2)} °C / ${(td * 9/5 + 32).toFixed(2)} °F` : '--';
-  document.getElementById('avg-pressure').textContent = p    != null ? `${p.toFixed(2)} hPa` : '--';
-  document.getElementById('avg-wspd').textContent     = wspd != null ? `${wspd.toFixed(2)} m/s` : '--';
-  document.getElementById('avg-wdir').textContent     = wdir != null ? `${wdir.toFixed(2)}°` : '--';
-  document.getElementById('avg-thetae').textContent   = the  != null ? `${the.toFixed(1)} K` : '--';
+  els.avgT.textContent        = t    != null ? `${t.toFixed(2)} °C / ${(t * 9/5 + 32).toFixed(2)} °F` : '--';
+  els.avgTd.textContent       = td   != null ? `${td.toFixed(2)} °C / ${(td * 9/5 + 32).toFixed(2)} °F` : '--';
+  els.avgPressure.textContent = p    != null ? `${p.toFixed(2)} hPa` : '--';
+  els.avgWspd.textContent     = wspd != null ? `${wspd.toFixed(2)} m/s` : '--';
+  els.avgWdir.textContent     = wdir != null ? `${wdir.toFixed(2)}°` : '--';
+  els.avgThetae.textContent   = the  != null ? `${the.toFixed(1)} K` : '--';
 }
 
 // Scans backwards from the latest point to collect all indices within windowSec.
@@ -1181,27 +1267,25 @@ function updateStatusSummary() {
   if (n === 0) return;
   const latest = buf.ts[n - 1];
 
-  document.getElementById('stat-last').textContent =
+  els.statLast.textContent =
     new Date(latest * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  document.getElementById('stat-gaps').textContent = `${gapCountToday}`;
+  els.statGaps.textContent = `${gapCountToday}`;
   const comp = completeness(10 * 60);
-  document.getElementById('stat-comp').textContent = comp == null ? '--' : `${comp.toFixed(1)} %`;
+  els.statComp.textContent = comp == null ? '--' : `${comp.toFixed(1)} %`;
   const dP = pressureTrend(latest);
-  document.getElementById('stat-ptrend').textContent = dP == null ? '--' : `${dP.toFixed(2)} hPa`;
+  els.statPtrend.textContent = dP == null ? '--' : `${dP.toFixed(2)} hPa`;
 
   // GPS fix: valid when the latest point has non-null lat and lon (null means GPS reported 'nan')
   const gpsFix = buf.lat[n - 1] != null && buf.lon[n - 1] != null;
-  const gpsEl = document.getElementById('stat-gps');
-  gpsEl.textContent  = gpsFix ? 'Fix' : 'No Fix';
-  gpsEl.className    = 'status-val ' + (gpsFix ? 'fix' : 'no-fix');  // drives CSS color
+  els.statGps.textContent  = gpsFix ? 'Fix' : 'No Fix';
+  els.statGps.className    = 'status-val ' + (gpsFix ? 'fix' : 'no-fix');  // drives CSS color
 
   // Record age: seconds between now and the GPS timestamp of the latest record
   const ageSec = Math.round(Date.now() / 1000 - latest);
-  const ageEl  = document.getElementById('stat-age');
-  ageEl.textContent = ageSec < 60
+  els.statAge.textContent = ageSec < 60
     ? `${ageSec}s ago`
     : `${Math.floor(ageSec / 60)}m ${ageSec % 60}s ago`;
-  ageEl.className = 'status-val' + (ageSec > 30 ? ' stale' : '');  // turns orange to match the header dot
+  els.statAge.className = 'status-val' + (ageSec > 30 ? ' stale' : '');  // turns orange to match the header dot
 }
 
 // ── Max wind tracker ──────────────────────────────────────────────────────────
@@ -1223,14 +1307,14 @@ function updateMaxWind(p) {
 // Refreshes the max wind card DOM from the current maxWind state.
 function renderMaxWind() {
   const fmt2 = v => v != null ? v.toFixed(2) : '--';
-  document.getElementById('mw-wspd').textContent =
+  els.mwWspd.textContent =
     maxWind.wspd != null ? `${fmt2(maxWind.wspd)} m/s` : '--';
-  document.getElementById('mw-time').textContent =
+  els.mwTime.textContent =
     maxWind.ts != null ? new Date(maxWind.ts * 1000).toISOString().slice(11, 19) + ' UTC' : '--';
   const lat = maxWind.lat, lon = maxWind.lon;
-  document.getElementById('mw-lat').textContent =
+  els.mwLat.textContent =
     lat != null ? `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}` : '--';
-  document.getElementById('mw-lon').textContent =
+  els.mwLon.textContent =
     lon != null ? `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}` : '--';
 }
 
@@ -1251,17 +1335,18 @@ function pushToCharts() {
 
   if (zoomedRange) {
     // Zoomed/panned mode: hold the user's locked window on every incoming point.
-    for (const c of Object.values(charts)) c.setScale('x', zoomedRange);
+    for (const c of getChartList()) c.setScale('x', zoomedRange);
     // Keep the wspd y-scale on a nice [0, step*4] range in zoomed mode so the
     // splits function always generates ticks at 0/25/50/75/100% of plot height,
     // keeping them aligned with the wdir gridlines (which are always at those same positions).
-    const wspdRangeZ = paddedRange(minMaxVisible('wspd', zoomedRange.min, zoomedRange.max), 0.15, 0.8);
+    const visible = visibleRanges(zoomedRange.min, zoomedRange.max);
+    const wspdRangeZ = paddedRange(visible.wspd, 0.15, 0.8);
     if (wspdRangeZ) {
       const stepZ = niceStep((wspdRangeZ.max - 0) / 4, 0.25);
       const wspdChart = IS_MOBILE ? charts.wspd : charts.wind;
       wspdChart.setScale('wspd', { min: 0, max: stepZ * 4 });
     }
-    const pRangeZ = paddedRange(minMaxVisible('pressure', zoomedRange.min, zoomedRange.max), 0.04, 0.8);
+    const pRangeZ = paddedRange(visible.pressure, 0.04, 0.8);
     if (pRangeZ) {
       const pMidZ  = (pRangeZ.min + pRangeZ.max) / 2;
       const pHalfZ = Math.max((pRangeZ.max - pRangeZ.min) / 2, 5);
@@ -1272,19 +1357,20 @@ function pushToCharts() {
     // buf.ts is chronological so the last element is always the newest timestamp.
     const xMax = buf.ts[buf.ts.length - 1];
     const xMin = Math.max(buf.ts[0], xMax - VIEW_SEC);
-    for (const c of Object.values(charts)) c.setScale('x', { min: xMin, max: xMax === xMin ? xMin + 60 : xMax });
+    for (const c of getChartList()) c.setScale('x', { min: xMin, max: xMax === xMin ? xMin + 60 : xMax });
 
     // Compute y ranges over only the visible window so the axes stay tight
     // on what's actually on screen, not the full 2-hour buffer.
-    const tRange  = paddedRange(minMaxVisible('t',        xMin, xMax), 0.08, 0.5);
-    const tdRange = paddedRange(minMaxVisible('td',       xMin, xMax), 0.08, 0.5);
+    const visible = visibleRanges(xMin, xMax);
+    const tRange  = paddedRange(visible.t, 0.08, 0.5);
+    const tdRange = paddedRange(visible.td, 0.08, 0.5);
     if (tRange && tdRange) {
       charts.ttd.setScale('y', {
         min: Math.min(tRange.min, tdRange.min),
         max: Math.max(tRange.max, tdRange.max),
       });
     }
-    const wspdRange = paddedRange(minMaxVisible('wspd',     xMin, xMax), 0.15, 0.8);
+    const wspdRange = paddedRange(visible.wspd, 0.15, 0.8);
     if (wspdRange) {
       const min = 0;
       const step = niceStep((wspdRange.max - min) / 4, 0.25);
@@ -1292,7 +1378,7 @@ function pushToCharts() {
       const wspdChart = IS_MOBILE ? charts.wspd : charts.wind;
       wspdChart.setScale('wspd', { min, max });
     }
-    const pRange = paddedRange(minMaxVisible('pressure', xMin, xMax), 0.04, 0.8);
+    const pRange = paddedRange(visible.pressure, 0.04, 0.8);
     if (pRange) {
       // Enforce a minimum 10 hPa window so small swings don't fill the entire axis.
       const pMid  = (pRange.min + pRange.max) / 2;
@@ -1300,6 +1386,15 @@ function pushToCharts() {
       charts.pressure.setScale('y', { min: pMid - pHalf, max: pMid + pHalf });
     }
   }
+}
+
+function schedulePushToCharts() {
+  if (pushPending) return;
+  pushPending = true;
+  requestAnimationFrame(() => {
+    pushPending = false;
+    pushToCharts();
+  });
 }
 
 // Drops the oldest points when the buffer exceeds MAX_PTS, keeping memory bounded.
@@ -1373,7 +1468,7 @@ function appendPoint(p) {
 // Pass deg=null to draw just the static rose (used on init before first data).
 // wdir is the wind direction in degrees (optional); drawn as a blue arrow.
 function drawCompass(deg, wdir) {
-  const canvas = document.getElementById('compass-canvas');
+  const canvas = els.compassCanvas;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2, R = Math.min(cx, cy) - 22;
@@ -1462,17 +1557,17 @@ function updateCurrentValues(p) {
 
   const the = calcThetaE(p.t, p.td, p.pressure);
 
-  document.getElementById('cv-t').textContent        = fmtTF(p.t);
-  document.getElementById('cv-td').textContent       = fmtTF(p.td);
-  document.getElementById('cv-pressure').textContent = p.pressure != null ? `${fmt2(p.pressure)} hPa` : '--';
-  document.getElementById('cv-wspd').textContent     = p.wspd     != null ? `${fmt2(p.wspd)} m/s`     : '--';
-  document.getElementById('cv-wdir').textContent     = p.wdir     != null ? `${fmt2(p.wdir)}°`         : '--';
-  document.getElementById('cv-thetae').textContent   = the        != null ? `${the.toFixed(1)} K`      : '--';
+  els.cvT.textContent        = fmtTF(p.t);
+  els.cvTd.textContent       = fmtTF(p.td);
+  els.cvPressure.textContent = p.pressure != null ? `${fmt2(p.pressure)} hPa` : '--';
+  els.cvWspd.textContent     = p.wspd     != null ? `${fmt2(p.wspd)} m/s`     : '--';
+  els.cvWdir.textContent     = p.wdir     != null ? `${fmt2(p.wdir)}°`         : '--';
+  els.cvThetae.textContent   = the        != null ? `${the.toFixed(1)} K`      : '--';
 
   drawCompass(p.compass_dir, p.wdir);
-  document.getElementById('compass-deg').textContent = p.compass_dir != null ? `${fmt2(p.compass_dir)}°` : '---°';
-  document.getElementById('compass-wnd').textContent = p.wdir        != null ? `${fmt2(p.wdir)}°`        : '---°';
-  document.getElementById('last-update').textContent =
+  els.compassDeg.textContent = p.compass_dir != null ? `${fmt2(p.compass_dir)}°` : '---°';
+  els.compassWnd.textContent = p.wdir        != null ? `${fmt2(p.wdir)}°`        : '---°';
+  els.lastUpdate.textContent =
     new Date(p.ts * 1000).toISOString().slice(11, 19) + ' UTC';
 }
 
@@ -1482,7 +1577,7 @@ resetBtn.onclick = resetZoom;
 // ── Max wind reset button ─────────────────────────────────────────────────────
 // Clears the recorded max and sets resetTs to the current latest timestamp so
 // only future incoming points are candidates for the new max.
-document.getElementById('maxwind-reset-btn').onclick = () => {
+els.maxwindResetBtn.onclick = () => {
   const n = buf.ts.length;
   maxWind.resetTs = n > 0 ? buf.ts[n - 1] : null;
   maxWind.wspd = null; maxWind.ts = null; maxWind.lat = null; maxWind.lon = null;
@@ -1490,7 +1585,7 @@ document.getElementById('maxwind-reset-btn').onclick = () => {
 };
 
 // ── Live / Pause ──────────────────────────────────────────────────────────────
-const liveBtn = document.getElementById('live-btn');
+const liveBtn = els.liveBtn;
 liveBtn.onclick = () => {
   isLive = !isLive;
   if (isLive) {
@@ -1505,10 +1600,26 @@ liveBtn.onclick = () => {
 };
 
 // ── SSE connection ────────────────────────────────────────────────────────────
-const dot        = document.getElementById('conn-dot');
-const lastUpdEl  = document.getElementById('last-update');
+const dot        = els.connDot;
+const lastUpdEl  = els.lastUpdate;
+const statusMsg  = els.statusMsg;
 const STALE_MS   = 30_000;   // flag stale after 30 s without a data point
 let   lastDataAt = null;      // wall-clock ms of last real SSE message
+
+function updateHeaderStatus({ stale = false, off = false } = {}) {
+  dot.classList.toggle('stale', stale);
+  dot.classList.toggle('off', off);
+  lastUpdEl.classList.toggle('stale', stale);
+
+  statusMsg.classList.toggle('show', stale || off);
+  statusMsg.classList.toggle('stale', stale);
+  statusMsg.classList.toggle('off', off);
+  statusMsg.textContent = off
+    ? 'Viewer disconnected - retrying...'
+    : stale
+      ? 'No new data for 30s - check rack power / datalogger'
+      : '';
+}
 
 // Watchdog: runs every 5 s, marks dot+timestamp amber if data has gone quiet.
 // Also refreshes record age and GPS fix in the status card so they stay
@@ -1516,22 +1627,20 @@ let   lastDataAt = null;      // wall-clock ms of last real SSE message
 setInterval(() => {
   if (lastDataAt === null) return;  // no data yet since page load
   const stale = (Date.now() - lastDataAt) > STALE_MS;
-  dot.classList.toggle('stale', stale);
-  lastUpdEl.classList.toggle('stale', stale);
+  if (!dot.classList.contains('off')) updateHeaderStatus({ stale });
   updateStatusSummary();  // keeps record age ticking upward when data is stale
 }, 5000);
 
 function connect() {
   const es = new EventSource('/stream');
-  es.onopen  = () => dot.classList.remove('off');
+  es.onopen  = () => updateHeaderStatus({ stale: lastDataAt !== null && (Date.now() - lastDataAt) > STALE_MS });
   // On any error, close the connection and retry after 5 s — handles brief
   // network blips and server restarts without needing a page reload.
-  es.onerror = () => { dot.classList.add('off'); es.close(); setTimeout(connect, 5000); };
+  es.onerror = () => { updateHeaderStatus({ off: true }); es.close(); setTimeout(connect, 5000); };
 
   es.onmessage = e => {
     lastDataAt = Date.now();
-    dot.classList.remove('stale');
-    lastUpdEl.classList.remove('stale');
+    updateHeaderStatus();
     const p = JSON.parse(e.data);
     // /initial and /stream can race — queue points that arrive before the
     // history fetch resolves, then replay them in appendPoint order after.
@@ -1545,7 +1654,7 @@ function connect() {
     // second to avoid unnecessary DOM churn at 1 Hz.
     if (buf.ts.length % AVG_WIN === 0) updateAvgPills();
     updateStatusSummary();
-    if (isLive) pushToCharts();
+    if (isLive) schedulePushToCharts();
   };
 }
 
@@ -1558,13 +1667,14 @@ drawCompass(null);
 // available for chartWidth() and chartHeight() to read.
 requestAnimationFrame(() => {
   if (IS_MOBILE) {
-    document.getElementById('card-wind-combined').style.display = 'none';
-    document.querySelectorAll('.mobile-only').forEach(el => { el.style.display = ''; });
+    els.cardWindCombined.style.display = 'none';
+    els.mobileOnlyCards.forEach(el => { el.style.display = ''; });
   }
   const hintText = IS_MOBILE
     ? 'swipe to pan · pinch to zoom · double-tap to reset'
     : 'drag to zoom · scroll to pan · double-click to reset';
-  document.querySelectorAll('.zoom-hint').forEach(el => { el.textContent = hintText; });
+  els.zoomHints.forEach(el => { el.textContent = hintText; });
+  measureChartSize();
   initTTd();
   initWind();
   initPressure();
@@ -1581,12 +1691,11 @@ requestAnimationFrame(() => {
   // Refit all charts when the charts column changes size (window resize, etc.).
   // pushToCharts re-asserts the correct scale after the resize.
   const resizeObserver = new ResizeObserver(() => {
-    const w = chartWidth();
-    const h = chartHeight();
-    for (const c of Object.values(charts)) c.setSize({ width: w, height: h });
-    pushToCharts();
+    const size = measureChartSize();
+    for (const c of getChartList()) c.setSize(size);
+    schedulePushToCharts();
   });
-  resizeObserver.observe(document.querySelector('#charts-col'));
+  resizeObserver.observe(els.chartsCol);
 
   // ── Load history ────────────────────────────────────────────────────────────
   // Fetches up to 2 hours of pre-existing data so the charts aren't empty on load.
@@ -1628,7 +1737,7 @@ requestAnimationFrame(() => {
         updateMaxWind({ ts: buf.ts[i], wspd: buf.wspd[i], lat: buf.lat[i], lon: buf.lon[i] });
       }
       zoomedRange = null;
-      pushToCharts();
+      schedulePushToCharts();
       updateAvgPills();
       updateStatusSummary();
       if (buf.ts.length > 0) {
@@ -1649,9 +1758,9 @@ requestAnimationFrame(() => {
 fetch('/version')
   .then(r => r.json())
   .then(data => {
-    const btn = document.getElementById('update-btn');
+    const btn = els.updateBtn;
     if (data.dirty) {
-      document.getElementById('dev-badge').style.display = 'block';
+      els.devBadge.style.display = 'block';
       btn.style.display = 'none';
     } else if (data.update_available) {
       btn.textContent = `↑ Update · ${data.commit}`;
@@ -1664,9 +1773,9 @@ fetch('/version')
   .catch(() => {});
 
 // ── Update (git pull + restart) ───────────────────────────────────────────────
-document.getElementById('update-btn').onclick = async () => {
-  const btn     = document.getElementById('update-btn');
-  const overlay = document.getElementById('update-overlay');
+els.updateBtn.onclick = async () => {
+  const btn     = els.updateBtn;
+  const overlay = els.updateOverlay;
   btn.disabled = true;
   overlay.style.display = 'block';
   overlay.textContent = 'Running git pull…';

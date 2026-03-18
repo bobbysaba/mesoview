@@ -82,8 +82,8 @@ def _version_worker():
             update_available = bool(local_sha and remote_sha and local_sha != remote_sha)
             with _ver_lock:
                 _ver_cache.update(commit=commit, dirty=dirty, update_available=update_available)
-        except Exception:
-            pass  # silently skip if git isn't available or the repo has no remote
+        except Exception as e:
+            _log(f'WARNING: version check failed: {e}')
         time.sleep(300)  # re-check every 5 minutes; no need to poll faster for a version indicator
 
 threading.Thread(target=_version_worker, daemon=True).start()  # daemon=True so it exits when the main process exits
@@ -195,19 +195,24 @@ def parse_row(row):
 
 def get_local_ip():
     """Best-effort LAN IP discovery (avoids 127.0.0.1 where possible)."""
+    s = None
     try:
         # open a UDP socket to a public address — no data is sent, but the OS picks the outbound interface
         # this gives us the LAN IP that other devices would use to reach this machine
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        return s.getsockname()[0]
     except Exception:
         try:
             return socket.gethostbyname(socket.gethostname())  # fallback: resolve our own hostname
         except Exception:
             return '0.0.0.0'  # last resort: bind to all interfaces and let the user find the address
+    finally:
+        if s is not None:
+            try:
+                s.close()
+            except Exception:
+                pass
 
 def advertise_mdns(hostname='mesoview', port=8080):
     """Advertise http://<hostname>.local:<port> via mDNS/Bonjour."""
@@ -286,9 +291,13 @@ def _cache_worker():
 
     # ── Tail loop: append new points as ingest writes them ───────────────────
     path = today_file()
+    _wait_start = time.monotonic()
+    _last_warn = -60.0  # ensure we log on the first iteration if the file is missing
     while not path.exists():  # wait for ingest to create today's file before starting to tail
-        if int(time.time()) % 60 < 2:
-            _log(f'WARNING: still waiting for data file {path}')
+        elapsed = time.monotonic() - _wait_start
+        if elapsed - _last_warn >= 60:
+            _log(f'WARNING: still waiting for data file {path} ({int(elapsed)}s elapsed)')
+            _last_warn = elapsed
         time.sleep(2)
         path = today_file()
     pos = path.stat().st_size  # start at the end of the file so we only pick up new lines
@@ -296,21 +305,24 @@ def _cache_worker():
     while True:
         new_path = today_file()
         if new_path != path:
-            # date has rolled over — switch to the new file
+            # date has rolled over — switch to the new file and read from the top (after header)
             path = new_path
-            pos  = 0  # read the new file from the start (after skipping its header)
-            if path.exists():
-                with open(path) as fh:
-                    fh.readline()   # skip header on the new file
-                    pos = fh.tell() # advance pos past the header so we don't re-read it next loop
+            pos  = 0
 
         if path.exists():
             with open(path) as fh:
-                fh.seek(pos)          # jump to where we left off last iteration
+                # detect truncation: if our saved position is past EOF, the file was recreated
+                # (e.g. ingest restarted) — reset to just after the header to avoid missing new data
+                end = fh.seek(0, 2)
+                if pos > end:
+                    _log(f'WARNING: data file was truncated (pos={pos} > size={end}); resetting read position')
+                    pos = 0
+                fh.seek(pos)
                 if pos == 0:
-                    fh.readline()     # skip header when starting from the top of a newly-appeared file
+                    fh.readline()  # skip header when reading from the top of a file
+                    pos = fh.tell()
                 lines = fh.readlines()
-                pos = fh.tell()       # save position so next iteration continues from here
+                pos = fh.tell()  # save position so next iteration continues from here
             for line in lines:
                 p = parse_row(next(csv.reader([line.strip()]), []))
                 if p:
@@ -399,18 +411,21 @@ def stream():
         keepalive_interval = 2
         with _data_lock:
             last_seq = _data_seq
-        while True:
-            with _data_cond:
-                changed = _data_cond.wait_for(lambda: _data_seq != last_seq, timeout=keepalive_interval)
-                if changed:
-                    point = _data_buf[-1]
-                    last_seq = _data_seq
+        try:
+            while True:
+                with _data_cond:
+                    changed = _data_cond.wait_for(lambda: _data_seq != last_seq, timeout=keepalive_interval)
+                    if changed:
+                        point = _data_buf[-1] if _data_buf else None  # guard against empty deque on startup
+                        last_seq = _data_seq
+                    else:
+                        point = None
+                if point is None:
+                    yield ': keep-alive\n\n'
                 else:
-                    point = None
-            if point is None:
-                yield ': keep-alive\n\n'
-            else:
-                yield f'data: {json.dumps(point)}\n\n'
+                    yield f'data: {json.dumps(point)}\n\n'
+        except GeneratorExit:
+            pass  # client disconnected; generator is being closed normally
 
     return Response(
         generate_test() if TEST_MODE else generate(),

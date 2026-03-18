@@ -361,6 +361,7 @@ The small colored circle in the top-left corner of the header shows the health o
 | **Red** | Disconnected | SSE connection to mesoview lost. mesoview may have crashed, or the network between this browser and the host machine is interrupted. The browser reconnects automatically every 5 seconds. |
 
 The timestamp next to the dot also turns orange when data is stale.
+When the feed is stale or disconnected, a short text message appears in the header beside the timestamp describing the issue.
 
 ---
 

@@ -163,7 +163,7 @@ The colored dot in the top-left of the dashboard shows the current data feed hea
 | Orange | Connected but no data received in the last 30 seconds — mesoingest may be down, the datalogger may be unreachable, or the rack may not be powered on |
 | Red | SSE connection to mesoview lost — the mesoview process may be down or the network between your browser and the host machine is interrupted |
 
-If the dot is orange, check the log file for `WARNING` messages from mesoingest.
+If the feed is stale or disconnected, the header also shows a short text message describing the issue. If the dot is orange, check the log file for `WARNING` messages from mesoingest.
 
 ### Status card
 
