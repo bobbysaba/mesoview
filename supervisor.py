@@ -102,6 +102,7 @@ def _build_rtun_cmd(port: int) -> str:
     key_str = f'"{key}"' if os.name == 'nt' else shlex.quote(str(key))
     return (
         f'ssh -q -N '                        # -q = quiet (suppress banners), -N = no remote command (tunnel only)
+        f'-L {port}:localhost:22 '           # local-forward: localhost:port on vehicle → localhost:22 on remote
         f'-R {port}:localhost:22 '           # reverse-tunnel: bind port on remote → forward to localhost:22 here
         f'-o ExitOnForwardFailure=yes '      # exit immediately if the remote port cannot be bound
         f'-o TCPKeepAlive=yes '              # send TCP keepalives so the connection isn't dropped by firewalls/NAT
