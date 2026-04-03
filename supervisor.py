@@ -57,7 +57,7 @@ def _open_log(log_dir: Path) -> tuple[object, date]:
     """Open today's log file (append mode). Returns (file_handle, today_date)."""
     log_dir.mkdir(parents=True, exist_ok=True)
     today = date.today()
-    log_path = log_dir / f'mesoview.{today.strftime("%Y%m%d")}.log'
+    log_path = log_dir / f'meso360.{today.strftime("%Y%m%d")}.log'
     try:
         fh = open(log_path, 'a', buffering=1)  # buffering=1 = line-buffered: each line is flushed immediately
     except OSError as e:
