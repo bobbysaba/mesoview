@@ -110,6 +110,14 @@ def fetch_lastrecords(ip, session=None):
     return records
 
 
+def _parse_gps_ts(date_str, time_str):
+    """Parse GPS date (DDMMYY) and time (HHMMSS) into a UTC unix timestamp, or None."""
+    try:
+        return dt.datetime.strptime(date_str + time_str, '%d%m%y%H%M%S').replace(tzinfo=timezone.utc).timestamp()
+    except (ValueError, TypeError):
+        return None
+
+
 def _clean_gps_field(val):
     """Strip surrounding quotes/spaces and zero-pad to 6 digits.
     Keeps 'nan' as-is so the caller can detect and handle a missing GPS fix."""
@@ -167,6 +175,7 @@ def main_loop():
     last_record_num = None       # tracks the last successfully written record number for gap detection
     last_raw_gps_time = None    # raw GPS time string received last iteration (for duplicate detection)
     last_written_gps_time = None  # GPS time actually written (may be corrected); base for +1 s inference
+    last_written_ts = None       # unix timestamp of the last written record; used for GPS timestamp gap detection
 
     while True:
         start = dt.datetime.now(timezone.utc)  # record loop start time to enforce 1 Hz cadence
@@ -174,7 +183,10 @@ def main_loop():
         # fetch and check for gaps
         raw, record_num = fetch_record(IP, max_tries=MAX_TRIES, retry_delay=RETRY_DELAY, session=_SESSION)
 
-        if last_record_num is not None and record_num is not None and record_num - last_record_num > 1:
+        record_gap_detected = (
+            last_record_num is not None and record_num is not None and record_num - last_record_num > 1
+        )
+        if record_gap_detected:
             gap = record_num - last_record_num - 1
             _log(f'WARNING: gap detected — missed {gap} record(s) ({last_record_num + 1} to {record_num - 1}), attempting backfill')
             try:
@@ -186,6 +198,12 @@ def main_loop():
                 for rec_num, rec_values in missing:
                     try:
                         _write_record(parse_record(rec_values))
+                        rec_ts = _parse_gps_ts(
+                            _clean_gps_field(rec_values[9]) if len(rec_values) > 9 else '',
+                            _clean_gps_field(rec_values[10]) if len(rec_values) > 10 else '',
+                        )
+                        if rec_ts is not None:
+                            last_written_ts = rec_ts
                         _log(f'Backfilled record {rec_num}')
                     except Exception as e:
                         _log(f'WARNING: failed to backfill record {rec_num}: {e}')
@@ -238,9 +256,42 @@ def main_loop():
                     time.sleep(1 - elapsed)
                 continue
 
+        # GPS timestamp gap detection — fires when record numbers are sequential but the GPS
+        # timestamp still jumped by >1 s (e.g. GPS resumed from a freeze ahead of the patched value).
+        # Skipped when a record-number gap was already detected to avoid double-inserting records.
+        current_ts = _parse_gps_ts(fields[9], fields[10])
+        if (not record_gap_detected
+                and current_ts is not None
+                and last_written_ts is not None
+                and current_ts - last_written_ts > 1):
+            try:
+                backfill = fetch_lastrecords(IP, session=_SESSION)
+                missing = []
+                for rec_num, rec_values in backfill:
+                    rec_ts = _parse_gps_ts(
+                        _clean_gps_field(rec_values[9])  if len(rec_values) > 9  else '',
+                        _clean_gps_field(rec_values[10]) if len(rec_values) > 10 else '',
+                    )
+                    if rec_ts is not None and last_written_ts < rec_ts < current_ts:
+                        missing.append((rec_ts, rec_num, rec_values))
+                missing.sort(key=lambda x: x[0])
+                for rec_ts, rec_num, rec_values in missing:
+                    try:
+                        _write_record(parse_record(rec_values))
+                        last_written_ts = rec_ts
+                        _log(f'GPS gap backfill: inserted record {rec_num} (GPS {_clean_gps_field(rec_values[10])})')
+                    except Exception as e:
+                        _log(f'WARNING: GPS gap backfill failed for record {rec_num}: {e}')
+                still_missing = round(current_ts - last_written_ts - 1)
+                if still_missing > 0:
+                    _log(f'WARNING: GPS timestamp gap — {still_missing}s not in lastrecords buffer (real gap)')
+            except Exception as e:
+                _log(f'WARNING: GPS gap backfill fetch failed: {e}')
+
         _write_record(data_line)
         last_raw_gps_time    = gps_time      # always store what the GPS actually sent
         last_written_gps_time = fields[10]   # store what was written (corrected if applicable)
+        last_written_ts      = current_ts    # update after write so next iteration can diff against it
 
         # sleep for the remainder of the second to maintain ~1 Hz output rate
         elapsed = (dt.datetime.now(timezone.utc) - start).total_seconds()

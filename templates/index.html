@@ -209,6 +209,7 @@
     .cv-wspd     .cv-val { color: var(--wspd); }
     .cv-wdir     .cv-val { color: var(--wdir); }
     .cv-thetae   .cv-val { color: var(--thetae); }
+    .cv-rh       .cv-val { color: var(--td); }
 
     /* ── Status panel ───────────────────────────────────────── */
     .status-grid {
@@ -465,6 +466,10 @@
         <span class="cv-label">θ<sub>e</sub></span>
         <span class="cv-val" id="cv-thetae">--</span>
       </div>
+      <div class="cv-row cv-rh">
+        <span class="cv-label">RH</span>
+        <span class="cv-val" id="cv-rh">--</span>
+      </div>
     </div>
     <div class="card">
       <div class="card-title">30‑second averages</div>
@@ -491,6 +496,10 @@
       <div class="cv-row cv-thetae">
         <span class="cv-label">θ<sub>e</sub></span>
         <span class="cv-val" id="avg-thetae">--</span>
+      </div>
+      <div class="cv-row cv-rh">
+        <span class="cv-label">RH</span>
+        <span class="cv-val" id="avg-rh">--</span>
       </div>
     </div>
 
@@ -580,7 +589,7 @@ const AVG_WIN    = 30;    // number of points in the live 30-second sidebar aver
 const GAP_SEC    = 2;     // readings ≥2 s apart get a null sentinel (line break on chart); 2 s gives one missed reading before flagging a gap
 const OPS_GAP_SEC = 14400; // gap ≥4 hours marks a new operations day; limits how far back pan/zoom can scroll
 
-let buf = { ts: [], t: [], td: [], wspd: [], wdir: [], pressure: [], compass_dir: [], lat: [], lon: [] };
+let buf = { ts: [], t: [], td: [], wspd: [], wdir: [], pressure: [], compass_dir: [], lat: [], lon: [], rh: [] };
 // parallel arrays — every field has the same length as buf.ts.
 // null values in non-ts fields mark gap sentinels (see pushGap).
 
@@ -621,6 +630,8 @@ const els = {
   avgWspd: document.getElementById('avg-wspd'),
   avgWdir: document.getElementById('avg-wdir'),
   avgThetae: document.getElementById('avg-thetae'),
+  cvRh: document.getElementById('cv-rh'),
+  avgRh: document.getElementById('avg-rh'),
   statLast: document.getElementById('stat-last'),
   statGaps: document.getElementById('stat-gaps'),
   statComp: document.getElementById('stat-comp'),
@@ -1178,6 +1189,7 @@ function updateAvgPills() {
   const td   = mean('td');
   const p    = mean('pressure');
   const wspd = mean('wspd');
+  const rh   = mean('rh');
   const wdirVals = sl('wdir').filter(v => v != null);
   const wdir = wdirVals.length ? circMean(wdirVals) : null;
 
@@ -1189,6 +1201,7 @@ function updateAvgPills() {
   els.avgWspd.textContent     = wspd != null ? `${wspd.toFixed(2)} m/s` : '--';
   els.avgWdir.textContent     = wdir != null ? `${wdir.toFixed(2)}°` : '--';
   els.avgThetae.textContent   = the  != null ? `${the.toFixed(1)} K` : '--';
+  els.avgRh.textContent       = rh   != null ? `${rh.toFixed(1)} %` : '--';
 }
 
 // Scans backwards from the latest point to collect all indices within windowSec.
@@ -1418,6 +1431,7 @@ function pushGap(ts) {
   buf.compass_dir.push(null);
   buf.lat.push(null);
   buf.lon.push(null);
+  buf.rh.push(null);
 }
 
 // Returns true if index i holds a real sensor reading rather than a gap sentinel.
@@ -1461,6 +1475,7 @@ function appendPoint(p) {
   buf.compass_dir.push(p.compass_dir);
   buf.lat.push(p.lat ?? null);
   buf.lon.push(p.lon ?? null);
+  buf.rh.push(p.rh ?? null);
 }
 
 // ── Compass ───────────────────────────────────────────────────────────────────
@@ -1563,6 +1578,7 @@ function updateCurrentValues(p) {
   els.cvWspd.textContent     = p.wspd     != null ? `${fmt2(p.wspd)} m/s`     : '--';
   els.cvWdir.textContent     = p.wdir     != null ? `${fmt2(p.wdir)}°`         : '--';
   els.cvThetae.textContent   = the        != null ? `${the.toFixed(1)} K`      : '--';
+  els.cvRh.textContent       = p.rh       != null ? `${p.rh.toFixed(1)} %`     : '--';
 
   drawCompass(p.compass_dir, p.wdir);
   els.compassDeg.textContent = p.compass_dir != null ? `${fmt2(p.compass_dir)}°` : '---°';
@@ -1746,6 +1762,7 @@ requestAnimationFrame(() => {
           ts: buf.ts[i], t: buf.t[i], td: buf.td[i],
           wspd: buf.wspd[i], wdir: buf.wdir[i],
           pressure: buf.pressure[i], compass_dir: buf.compass_dir[i],
+          rh: buf.rh[i],
         });
       }
     });

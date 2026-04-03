@@ -307,23 +307,20 @@ def main() -> int:
         Child('mesoview',   viewer_cmd, restart_arg='--no-browser'),
     ]
 
-    # mesosync disabled — commented out to isolate internal bugs
-    # rtun_port = cfg.get('rtun_port')
-    # if rtun_port is not None:
-    #     try:
-    #         rtun_port = int(rtun_port)
-    #     except (ValueError, TypeError):
-    #         _log(log_fh, f'WARNING: rtun_port "{rtun_port}" is not a valid integer — SSH tunnel disabled')
-    #         rtun_port = None
-    # if rtun_port:
-    #     children.append(Child('mesosync', _build_rtun_cmd(rtun_port)))
-    # else:
-    #     _log(log_fh, 'rtun_port not set in config — SSH tunnel disabled')
-    rtun_port = None
+    rtun_port = cfg.get('rtun_port')
+    if rtun_port is not None:
+        try:
+            rtun_port = int(rtun_port)
+        except (ValueError, TypeError):
+            _log(log_fh, f'WARNING: rtun_port "{rtun_port}" is not a valid integer — SSH tunnel disabled')
+            rtun_port = None
+    if rtun_port:
+        children.append(Child('mesosync', _build_rtun_cmd(rtun_port)))
+    else:
+        _log(log_fh, 'rtun_port not set in config — SSH tunnel disabled')
 
-    # mesosync = next((child for child in children if child.name == 'mesosync'), None)
-    # next_tunnel_check = time.monotonic() + TUNNEL_CHECK_INTERVAL_SEC
-    mesosync = None
+    mesosync = next((child for child in children if child.name == 'mesosync'), None)
+    next_tunnel_check = time.monotonic() + TUNNEL_CHECK_INTERVAL_SEC
 
     stop = False  # set to True by the signal handler to break the main loop
     shutting_down = False
@@ -390,17 +387,16 @@ def main() -> int:
                         time.sleep(RESTART_DELAY_SEC)
                         child.start(log_fh)
 
-            # mesosync tunnel probe disabled
-            # if mesosync and mesosync.poll() is None and rtun_port and time.monotonic() >= next_tunnel_check:
-            #     ok, detail = _probe_rtun(rtun_port)
-            #     if ok:
-            #         _log(log_fh, f'mesosync probe passed on remote port {rtun_port}')
-            #     else:
-            #         _log(log_fh, f'mesosync probe failed on remote port {rtun_port} ({detail}); restarting tunnel')
-            #         _stop_children([mesosync], grace_sec=RESTART_DELAY_SEC)
-            #         _log(log_fh, f'starting {mesosync.name}: {mesosync.cmd}')
-            #         mesosync.start(log_fh)
-            #     next_tunnel_check = time.monotonic() + TUNNEL_CHECK_INTERVAL_SEC
+            if mesosync and mesosync.poll() is None and rtun_port and time.monotonic() >= next_tunnel_check:
+                ok, detail = _probe_rtun(rtun_port)
+                if ok:
+                    _log(log_fh, f'mesosync probe passed on remote port {rtun_port}')
+                else:
+                    _log(log_fh, f'mesosync probe failed on remote port {rtun_port} ({detail}); restarting tunnel')
+                    _stop_children([mesosync], grace_sec=RESTART_DELAY_SEC)
+                    _log(log_fh, f'starting {mesosync.name}: {mesosync.cmd}')
+                    mesosync.start(log_fh)
+                next_tunnel_check = time.monotonic() + TUNNEL_CHECK_INTERVAL_SEC
 
             time.sleep(1)  # poll children once per second; low CPU overhead
 

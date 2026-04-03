@@ -118,6 +118,7 @@ IDX = {
     'time_':       _HDR.index('gps_time'),      # GPS time (HHMMSS format); trailing underscore avoids shadowing Python's 'time'
     'lat':         _HDR.index('lat'),           # GPS latitude
     'lon':         _HDR.index('lon'),           # GPS longitude
+    'rh':          _HDR.index('der_rh'),        # derived relative humidity
 }
 
 # ── uPlot assets (auto-downloaded once for offline field use) ─────────────────
@@ -173,6 +174,7 @@ def parse_row(row):
         compass_dir = f(IDX['compass_dir'])
         lat         = f(IDX['lat'])
         lon         = f(IDX['lon'])
+        rh          = f(IDX['rh'])
 
         # skip rows where all primary met fields are missing (e.g. sensor dropout or header line)
         if all(v is None for v in (t, td, wspd, wdir, pressure, compass_dir)):
@@ -188,6 +190,7 @@ def parse_row(row):
             compass_dir = compass_dir,
             lat         = lat,
             lon         = lon,
+            rh          = rh,
         )
     except (ValueError, IndexError) as e:
         _log(f'WARNING: parse_row failed: {e}')  # log so repeated failures are visible in the supervisor log
