@@ -70,7 +70,10 @@ def _log(fh, msg: str) -> None:
     # datetime imported locally to avoid a module-level import that would shadow the one in _load_config
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-    print(f'[{ts}] [supervisor] {msg}', file=fh, flush=True)
+    line = f'[{ts}] [supervisor] {msg}'
+    print(line, file=fh, flush=True)
+    if fh not in (sys.stdout, sys.stderr):
+        print(line, flush=True)
 
 
 def _split_cmd(cmd: str) -> List[str]:
