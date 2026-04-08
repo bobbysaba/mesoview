@@ -1,3 +1,4 @@
 flask>=2.3
 requests>=2.28
 zeroconf>=0.38
+psutil>=5.9

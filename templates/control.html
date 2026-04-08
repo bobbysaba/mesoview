@@ -20,6 +20,12 @@
       --blue:     #89b4fa;
       --orange:   #fab387;
       --purple:   #cba6f7;
+      --t:        #f38ba8;
+      --td:       #89b4fa;
+      --wspd:     #a6e3a1;
+      --wdir:     #fab387;
+      --pressure: #cba6f7;
+      --thetae:   #f9e2af;
     }
 
     body {
@@ -27,7 +33,8 @@
       color: var(--text);
       font-family: ui-monospace, 'Cascadia Code', monospace;
       font-size: 14px;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
       padding: 0;
     }
 
@@ -102,13 +109,36 @@
     }
 
     .container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 20px;
+      display: grid;
+      grid-template-columns: 1fr 240px;
+      gap: 0;
+      height: calc(100vh - 41px);
+      overflow: hidden;
+    }
+    #left-col {
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 16px;
+      overflow-y: auto;
+      min-width: 0;
     }
+    #right-col {
+      width: 240px;
+      border-left: 1px solid var(--border);
+      padding: clamp(4px, 0.8vh, 8px) 10px;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(4px, 0.7vh, 10px);
+      overflow-y: auto;
+    }
+    #right-col .card { padding: clamp(4px, 0.8vh, 8px) 10px clamp(3px, 0.5vh, 6px); }
+    #right-col .card-title { font-size: clamp(0.56rem, 1.1vh, 0.64rem); margin-bottom: clamp(2px, 0.4vh, 5px); }
+    #right-col .cv-row { padding: clamp(1px, 0.25vh, 3px) 0; font-size: clamp(0.60rem, 1.2vh, 0.72rem); }
+    #right-col .status-grid { gap: clamp(3px, 0.5vh, 6px); font-size: clamp(0.60rem, 1.2vh, 0.72rem); }
+    #right-col #compass-canvas { width: clamp(100px, 14vh, 180px); height: clamp(100px, 14vh, 180px); }
+    #right-col #compass-labels { font-size: clamp(0.68rem, 1.3vh, 0.85rem); gap: clamp(6px, 1.2vh, 12px); }
+    #right-col .section-title { font-size: clamp(0.56rem, 1.1vh, 0.64rem); margin-bottom: clamp(2px, 0.4vh, 4px); }
 
     .section-title {
       font-size: 0.75rem;
@@ -272,6 +302,39 @@
       display: block;
     }
 
+    /* ── Sidebar cards ────────────────────────────────────────── */
+    .card-title { font-size: 0.68rem; color: var(--subtext); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px; }
+    #compass-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    #compass-canvas { display: block; }
+    #compass-labels { display: flex; gap: 12px; font-size: 0.85rem; letter-spacing: 0.06em; }
+    .compass-lbl { color: var(--subtext); }
+    #compass-deg { color: var(--wdir); }
+    #compass-wnd { color: var(--td); }
+    .cv-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 0.74rem; border-bottom: 1px solid var(--border); }
+    .cv-row:last-child { border-bottom: none; }
+    .cv-label { color: var(--subtext); }
+    .cv-val { font-weight: 600; }
+    .cv-t .cv-val { color: var(--t); }
+    .cv-td .cv-val { color: var(--td); }
+    .cv-pressure .cv-val { color: var(--pressure); }
+    .cv-wspd .cv-val { color: var(--wspd); }
+    .cv-wdir .cv-val { color: var(--wdir); }
+    .cv-thetae .cv-val { color: var(--thetae); }
+    .cv-rh .cv-val { color: var(--td); }
+    .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.75rem; }
+    .status-item { display: flex; flex-direction: column; gap: 2px; }
+    .status-label { color: var(--subtext); }
+    .status-val { font-weight: 600; }
+    #obs-gps.fix    { color: var(--wspd); }
+    #obs-gps.no-fix { color: var(--wdir); }
+    #obs-age.stale  { color: var(--wdir); }
+    #maxwind-reset-btn {
+      background: var(--muted); color: var(--subtext);
+      border: 1px solid var(--border); padding: 2px 8px;
+      border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 0.72rem;
+    }
+    #maxwind-reset-btn:hover { border-color: var(--subtext); color: var(--text); }
+
     /* ── Update banner ───────────────────────────────────────── */
     #update-banner {
       display: none;
@@ -298,54 +361,149 @@
   </header>
 
   <div class="container">
-    <!-- Update banner -->
-    <div id="update-banner">
-      Supervisor code was updated — restart meso360 to apply changes.
-    </div>
 
-    <!-- Components -->
-    <div>
-      <div class="section-title">Components</div>
+    <!-- ── Left column ── -->
+    <div id="left-col">
+
+      <!-- Update banner -->
+      <div id="update-banner">
+        Supervisor code was updated — restart meso360 to apply changes.
+      </div>
+
+      <!-- Quick Links -->
+      <div>
+        <div class="section-title">Quick Links</div>
+        <div class="links" id="quick-links">
+          <a class="link-btn" href="/view" target="_blank">Mesoview Dashboard</a>
+          <a class="link-btn" id="link-rack" href="#" target="_blank">Datalogger Rack</a>
+          <a class="link-btn" id="link-log" href="#" onclick="scrollToLog(); return false;">Today's Log</a>
+        </div>
+      </div>
+
+      <!-- Components -->
+      <div>
+        <div class="section-title">Components</div>
+        <div class="card">
+          <div id="components-list"></div>
+          <div class="legend">
+            <span><span class="status-dot running"></span> Running</span>
+            <span><span class="status-dot recent"></span> Recently restarted</span>
+            <span><span class="status-dot exited"></span> Crashed / exited</span>
+            <span><span class="status-dot disabled"></span> Disabled</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config + System Stats + GPS -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div>
+          <div class="section-title">Config</div>
+          <div class="card">
+            <div class="config-grid" id="config-grid"></div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">System</div>
+          <div class="card">
+            <div class="config-grid">
+              <span class="label">URL:</span><span class="value"><a id="stat-url" href="#" style="color:var(--blue);text-decoration:none">—</a></span>
+              <span class="label">UTC:</span><span class="value" id="stat-utc">—</span>
+              <span class="label">Uptime:</span><span class="value" id="stat-uptime">—</span>
+              <span class="label">Cache:</span><span class="value" id="stat-cache">—</span>
+              <span class="label">Python:</span><span class="value" id="stat-python">—</span>
+              <span class="label">Mode:</span><span class="value" id="stat-mode">—</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:row;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div class="section-title">Position</div>
+            <div class="card">
+              <div class="config-grid">
+                <span class="label">Lat:</span><span class="value" id="pos-lat">—</span>
+                <span class="label">Lon:</span><span class="value" id="pos-lon">—</span>
+                <span class="label">Map:</span><span class="value"><a id="pos-map" href="#" target="_blank" style="color:var(--blue);text-decoration:none">open</a></span>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="section-title">Resources</div>
+            <div class="card">
+              <div class="config-grid">
+                <span class="label">CPU:</span><span class="value" id="stat-cpu">—</span>
+                <span class="label">Mem:</span><span class="value" id="stat-mem">—</span>
+                <span class="label">Disk:</span><span class="value" id="stat-disk">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log Viewer -->
+      <div>
+        <div class="section-title">Recent Log</div>
+        <div id="log-viewer"></div>
+      </div>
+
+    </div><!-- end #left-col -->
+
+    <!-- ── Right column ── -->
+    <div id="right-col">
+      <div class="section-title">Latest Observation</div>
       <div class="card">
-        <div id="components-list">
-          <!-- Populated by JS -->
-        </div>
-        <div class="legend">
-          <span><span class="status-dot running"></span> Running</span>
-          <span><span class="status-dot recent"></span> Recently restarted</span>
-          <span><span class="status-dot exited"></span> Crashed / exited</span>
-          <span><span class="status-dot disabled"></span> Disabled</span>
+        <div class="card-title">Heading &amp; Wind</div>
+        <div id="compass-wrap">
+          <canvas id="compass-canvas" width="180" height="180"></canvas>
+          <div id="compass-labels">
+            <span class="compass-lbl">HDG <span id="compass-deg">---°</span></span>
+            <span class="compass-lbl">WND <span id="compass-wnd">---°</span></span>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- Quick Links -->
-    <div>
-      <div class="section-title">Quick Links</div>
-      <div class="links" id="quick-links">
-        <a class="link-btn" href="/view" target="_blank">Mesoview Dashboard</a>
-        <a class="link-btn" id="link-rack" href="#" target="_blank">Datalogger Rack</a>
-        <a class="link-btn" id="link-log" href="#" onclick="scrollToLog(); return false;">Today's Log</a>
-      </div>
-    </div>
-
-    <!-- Config Summary -->
-    <div>
-      <div class="section-title">Config</div>
       <div class="card">
-        <div class="config-grid" id="config-grid">
-          <!-- Populated by JS -->
+        <div class="card-title">Current</div>
+        <div class="cv-row cv-t"><span class="cv-label">T</span><span class="cv-val" id="cv-t">--</span></div>
+        <div class="cv-row cv-td"><span class="cv-label">Td</span><span class="cv-val" id="cv-td">--</span></div>
+        <div class="cv-row cv-pressure"><span class="cv-label">Pressure</span><span class="cv-val" id="cv-pressure">--</span></div>
+        <div class="cv-row cv-wspd"><span class="cv-label">Speed</span><span class="cv-val" id="cv-wspd">--</span></div>
+        <div class="cv-row cv-wdir"><span class="cv-label">Wind Dir</span><span class="cv-val" id="cv-wdir">--</span></div>
+        <div class="cv-row cv-thetae"><span class="cv-label">&theta;<sub>e</sub></span><span class="cv-val" id="cv-thetae">--</span></div>
+        <div class="cv-row cv-rh"><span class="cv-label">RH</span><span class="cv-val" id="cv-rh">--</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">30-second averages</div>
+        <div class="cv-row cv-t"><span class="cv-label">T</span><span class="cv-val" id="avg-t">--</span></div>
+        <div class="cv-row cv-td"><span class="cv-label">Td</span><span class="cv-val" id="avg-td">--</span></div>
+        <div class="cv-row cv-pressure"><span class="cv-label">Pressure</span><span class="cv-val" id="avg-pressure">--</span></div>
+        <div class="cv-row cv-wspd"><span class="cv-label">Speed</span><span class="cv-val" id="avg-wspd">--</span></div>
+        <div class="cv-row cv-wdir"><span class="cv-label">Wind Dir</span><span class="cv-val" id="avg-wdir">--</span></div>
+        <div class="cv-row cv-thetae"><span class="cv-label">&theta;<sub>e</sub></span><span class="cv-val" id="avg-thetae">--</span></div>
+        <div class="cv-row cv-rh"><span class="cv-label">RH</span><span class="cv-val" id="avg-rh">--</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Max Wind Speed</div>
+        <div class="cv-row cv-wspd"><span class="cv-label">Speed</span><span class="cv-val" id="mw-wspd">--</span></div>
+        <div class="cv-row"><span class="cv-label">Time</span><span class="cv-val" id="mw-time">--</span></div>
+        <div class="cv-row"><span class="cv-label">Lat</span><span class="cv-val" id="mw-lat">--</span></div>
+        <div class="cv-row"><span class="cv-label">Lon</span><span class="cv-val" id="mw-lon">--</span></div>
+        <div style="text-align:right;margin-top:6px">
+          <button id="maxwind-reset-btn">Reset Max</button>
         </div>
       </div>
-    </div>
+      <div class="card">
+        <div class="card-title">Status</div>
+        <div class="status-grid">
+          <div class="status-item"><span class="status-label">Last update</span><span class="status-val" id="obs-last">--</span></div>
+          <div class="status-item"><span class="status-label">Gaps (UTC day)</span><span class="status-val" id="obs-gaps">--</span></div>
+          <div class="status-item"><span class="status-label">Completeness</span><span class="status-val" id="obs-comp">--</span></div>
+          <div class="status-item"><span class="status-label">3-min ΔP</span><span class="status-val" id="obs-ptrend">--</span></div>
+          <div class="status-item"><span class="status-label">GPS fix</span><span class="status-val" id="obs-gps">--</span></div>
+          <div class="status-item"><span class="status-label">Record age</span><span class="status-val" id="obs-age">--</span></div>
+        </div>
+      </div>
+    </div><!-- end #right-col -->
 
-    <!-- Log Viewer -->
-    <div>
-      <div class="section-title">Recent Log</div>
-      <div id="log-viewer"></div>
-    </div>
-  </div>
-
+  </div><!-- end .container -->
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 let statusData = null;
@@ -479,6 +637,7 @@ async function fetchStatus() {
     statusData = await resp.json();
     renderComponents(statusData.components);
     renderConfig(statusData.config);
+    updateStats();
     setHeartbeat(true);
   } catch (e) {
     setHeartbeat(false);
@@ -607,12 +766,299 @@ function scrollToLog() {
   document.getElementById('log-viewer').scrollIntoView({behavior: 'smooth'});
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────
+// ── Live data sidebar ─────────────────────────────────────────────────────────
+const AVG_WIN = 30;
+const GAP_SEC = 2;
+let obsBuf = { ts: [], t: [], td: [], wspd: [], wdir: [], pressure: [], compass_dir: [], lat: [], lon: [], rh: [] };
+let obsLastRealTs = null;
+let obsGapCount = 0;
+let obsGapDay = null;
+let obsMaxWind = { wspd: null, ts: null, lat: null, lon: null };
+let obsInitialLoaded = false;
+let obsPending = [];
+let obsLastDataAt = null;
+
+function normTs(ts) { return ts > 1e11 ? ts / 1000 : ts; }
+
+function calcThetaE(t_c, td_c, p_hpa) {
+  if (t_c == null || td_c == null || p_hpa == null) return null;
+  const T = t_c + 273.15, Td = td_c + 273.15;
+  const e = 6.112 * Math.exp((17.67 * td_c) / (td_c + 243.5));
+  const r = 0.622 * e / (p_hpa - e);
+  const TL = 56 + 1 / (1 / (Td - 56) - Math.log(T / Td) / 800);
+  return T * Math.pow(1000 / p_hpa, 0.2854 * (1 - 0.28 * r)) * Math.exp(r * (1 + 0.81 * r) * (3376 / TL - 2.54));
+}
+
+function circMean(arr) {
+  let s = 0, c = 0;
+  for (const v of arr) { s += Math.sin(v * Math.PI / 180); c += Math.cos(v * Math.PI / 180); }
+  return ((Math.atan2(s, c) * 180 / Math.PI) + 360) % 360;
+}
+
+function obsAppendPoint(p) {
+  const dayStart = Math.floor(p.ts / 86400) * 86400;
+  if (obsGapDay == null || dayStart !== obsGapDay) { obsGapDay = dayStart; obsGapCount = 0; obsLastRealTs = null; }
+  if (obsLastRealTs != null && p.ts - obsLastRealTs >= GAP_SEC) obsGapCount++;
+  obsLastRealTs = p.ts;
+  const n = obsBuf.ts.length;
+  if (n > 0 && p.ts - obsBuf.ts[n - 1] >= GAP_SEC) {
+    for (const k of Object.keys(obsBuf)) obsBuf[k].push(k === 'ts' ? obsBuf.ts[n-1] + 1 : null);
+  }
+  obsBuf.ts.push(p.ts); obsBuf.t.push(p.t); obsBuf.td.push(p.td);
+  obsBuf.wspd.push(p.wspd); obsBuf.wdir.push(p.wdir); obsBuf.pressure.push(p.pressure);
+  obsBuf.compass_dir.push(p.compass_dir ?? null); obsBuf.lat.push(p.lat ?? null);
+  obsBuf.lon.push(p.lon ?? null); obsBuf.rh.push(p.rh ?? null);
+  if (obsBuf.ts.length > 7200) { for (const k of Object.keys(obsBuf)) obsBuf[k].splice(0, 1); }
+}
+
+function drawCompass(deg, wdir) {
+  const canvas = document.getElementById('compass-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, cx = W/2, cy = H/2, R = Math.min(cx,cy) - 16;
+  ctx.clearRect(0, 0, W, H);
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2*Math.PI);
+  ctx.fillStyle = '#181825'; ctx.fill();
+  ctx.strokeStyle = '#313244'; ctx.lineWidth = 1.5; ctx.stroke();
+  for (let i = 0; i < 36; i++) {
+    const a = (i*10 - 90) * Math.PI/180, cardinal = i%9===0, len = cardinal ? 9 : 4;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a)*(R-1), cy + Math.sin(a)*(R-1));
+    ctx.lineTo(cx + Math.cos(a)*(R-1-len), cy + Math.sin(a)*(R-1-len));
+    ctx.strokeStyle = cardinal ? '#45475a' : '#313244'; ctx.lineWidth = cardinal ? 1.5 : 0.75; ctx.stroke();
+    if (i%3===0) {
+      ctx.font = '8px ui-monospace,monospace'; ctx.fillStyle = '#c5cbe5';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`${i*10}`, cx + Math.cos(a)*(R+9), cy + Math.sin(a)*(R+9));
+    }
+  }
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const [lbl, d] of [['N',0],['E',90],['S',180],['W',270]]) {
+    const a = (d-90)*Math.PI/180;
+    ctx.fillStyle = d===0 ? '#f38ba8' : '#a6adc8';
+    ctx.fillText(lbl, cx + Math.cos(a)*(R-14), cy + Math.sin(a)*(R-14));
+  }
+  if (wdir != null) {
+    const wa = (wdir-90)*Math.PI/180;
+    const wx = cx + Math.cos(wa)*(R*0.6), wy = cy + Math.sin(wa)*(R*0.6);
+    ctx.lineWidth = 2; ctx.strokeStyle = '#89b4fa';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(wx, wy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wx,wy);
+    ctx.lineTo(wx+Math.cos(wa+2.6)*8, wy+Math.sin(wa+2.6)*8);
+    ctx.lineTo(wx+Math.cos(wa-2.6)*8, wy+Math.sin(wa-2.6)*8);
+    ctx.closePath(); ctx.fillStyle = '#89b4fa'; ctx.fill();
+  }
+  if (deg != null) {
+    const a = (deg-90)*Math.PI/180;
+    const tx = cx + Math.cos(a)*(R*0.6), ty = cy + Math.sin(a)*(R*0.6);
+    ctx.lineWidth = 2; ctx.strokeStyle = '#fab387';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx,ty);
+    ctx.lineTo(tx+Math.cos(a+2.6)*8, ty+Math.sin(a+2.6)*8);
+    ctx.lineTo(tx+Math.cos(a-2.6)*8, ty+Math.sin(a-2.6)*8);
+    ctx.closePath(); ctx.fillStyle = '#fab387'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 2*Math.PI);
+    ctx.fillStyle = '#cdd6f4'; ctx.fill();
+  }
+}
+
+function updateCurrentValues(p) {
+  const fmt2 = v => v != null ? v.toFixed(2) : '--';
+  const fmtTF = v => v != null ? `${v.toFixed(2)} °C / ${(v*9/5+32).toFixed(2)} °F` : '--';
+  const the = calcThetaE(p.t, p.td, p.pressure);
+  document.getElementById('cv-t').textContent        = fmtTF(p.t);
+  document.getElementById('cv-td').textContent       = fmtTF(p.td);
+  document.getElementById('cv-pressure').textContent = p.pressure != null ? `${fmt2(p.pressure)} hPa` : '--';
+  document.getElementById('cv-wspd').textContent     = p.wspd     != null ? `${fmt2(p.wspd)} m/s`     : '--';
+  document.getElementById('cv-wdir').textContent     = p.wdir     != null ? `${fmt2(p.wdir)}°`         : '--';
+  document.getElementById('cv-thetae').textContent   = the        != null ? `${the.toFixed(1)} K`      : '--';
+  document.getElementById('cv-rh').textContent       = p.rh       != null ? `${p.rh.toFixed(1)} %`     : '--';
+  drawCompass(p.compass_dir, p.wdir);
+  document.getElementById('compass-deg').textContent = p.compass_dir != null ? `${fmt2(p.compass_dir)}°` : '---°';
+  document.getElementById('compass-wnd').textContent = p.wdir        != null ? `${fmt2(p.wdir)}°`        : '---°';
+}
+
+function updateAvgPills() {
+  const n = obsBuf.ts.length, win = Math.min(AVG_WIN, n);
+  if (win === 0) return;
+  const sl = k => obsBuf[k].slice(n-win, n);
+  const mean = k => { const v = sl(k).filter(x => x != null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; };
+  const t = mean('t'), td = mean('td'), p = mean('pressure'), wspd = mean('wspd'), rh = mean('rh');
+  const wdirVals = sl('wdir').filter(x => x != null);
+  const wdir = wdirVals.length ? circMean(wdirVals) : null;
+  const the = calcThetaE(t, td, p);
+  document.getElementById('avg-t').textContent        = t    != null ? `${t.toFixed(2)} °C / ${(t*9/5+32).toFixed(2)} °F` : '--';
+  document.getElementById('avg-td').textContent       = td   != null ? `${td.toFixed(2)} °C / ${(td*9/5+32).toFixed(2)} °F` : '--';
+  document.getElementById('avg-pressure').textContent = p    != null ? `${p.toFixed(2)} hPa` : '--';
+  document.getElementById('avg-wspd').textContent     = wspd != null ? `${wspd.toFixed(2)} m/s` : '--';
+  document.getElementById('avg-wdir').textContent     = wdir != null ? `${wdir.toFixed(2)}°` : '--';
+  document.getElementById('avg-thetae').textContent   = the  != null ? `${the.toFixed(1)} K` : '--';
+  document.getElementById('avg-rh').textContent       = rh   != null ? `${rh.toFixed(1)} %` : '--';
+}
+
+function updateMaxWind(p) {
+  if (p.wspd == null) return;
+  if (obsMaxWind.wspd == null || p.wspd > obsMaxWind.wspd) {
+    obsMaxWind = { wspd: p.wspd, ts: p.ts, lat: p.lat ?? null, lon: p.lon ?? null };
+    const fmt2 = v => v != null ? v.toFixed(2) : '--';
+    document.getElementById('mw-wspd').textContent = `${fmt2(obsMaxWind.wspd)} m/s`;
+    document.getElementById('mw-time').textContent = new Date(obsMaxWind.ts*1000).toISOString().slice(11,19) + ' UTC';
+    const lat = obsMaxWind.lat, lon = obsMaxWind.lon;
+    document.getElementById('mw-lat').textContent = lat != null ? `${Math.abs(lat).toFixed(4)}° ${lat>=0?'N':'S'}` : '--';
+    document.getElementById('mw-lon').textContent = lon != null ? `${Math.abs(lon).toFixed(4)}° ${lon>=0?'E':'W'}` : '--';
+  }
+}
+
+function updateObsStatus() {
+  const n = obsBuf.ts.length;
+  if (n === 0) return;
+  const latest = obsBuf.ts[n-1];
+  document.getElementById('obs-last').textContent =
+    new Date(latest*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('obs-gaps').textContent = `${obsGapCount}`;
+  // completeness over last 10 min
+  const cutoff = latest - 600;
+  let count = 0;
+  for (let i = n-1; i >= 0; i--) {
+    if (obsBuf.ts[i] < cutoff) break;
+    if (obsBuf.t[i] != null || obsBuf.wspd[i] != null) count++;
+  }
+  const dur = Math.min(600, latest - Math.max(cutoff, obsBuf.ts[0]) + 1);
+  document.getElementById('obs-comp').textContent = `${Math.min(100, count/Math.max(1,Math.round(dur))*100).toFixed(1)} %`;
+  // 3-min delta-P
+  const target = latest - 180;
+  let bestIdx = -1, bestDt = Infinity;
+  for (let i = n-1; i >= 0; i--) {
+    const dt = Math.abs(obsBuf.ts[i] - target);
+    if (dt < bestDt && obsBuf.pressure[i] != null) { bestDt = dt; bestIdx = i; }
+    if (obsBuf.ts[i] < target - 60) break;
+  }
+  const latestP = obsBuf.pressure[n-1];
+  const dP = (bestIdx >= 0 && latestP != null) ? latestP - obsBuf.pressure[bestIdx] : null;
+  document.getElementById('obs-ptrend').textContent = dP != null ? `${dP.toFixed(2)} hPa` : '--';
+  // GPS
+  const gpsFix = obsBuf.lat[n-1] != null && obsBuf.lon[n-1] != null;
+  const gpsEl = document.getElementById('obs-gps');
+  gpsEl.textContent = gpsFix ? 'Fix' : 'No Fix';
+  gpsEl.className = 'status-val ' + (gpsFix ? 'fix' : 'no-fix');
+  // Record age
+  const ageSec = Math.round(Date.now()/1000 - latest);
+  const ageEl = document.getElementById('obs-age');
+  ageEl.textContent = ageSec < 60 ? `${ageSec}s ago` : `${Math.floor(ageSec/60)}m ${ageSec%60}s ago`;
+  ageEl.className = 'status-val' + (ageSec > 30 ? ' stale' : '');
+}
+
+function initObsStream() {
+  drawCompass(null, null);
+  document.getElementById('maxwind-reset-btn').onclick = () => {
+    obsMaxWind = { wspd: null, ts: null, lat: null, lon: null };
+    ['mw-wspd','mw-time','mw-lat','mw-lon'].forEach(id => document.getElementById(id).textContent = '--');
+  };
+
+  fetch('/view/initial').then(r => r.json()).then(d => {
+    if (Array.isArray(d.ts)) {
+      for (let i = 0; i < d.ts.length; i++) {
+        const p = { ts: normTs(d.ts[i]), t: d.t[i], td: d.td[i], wspd: d.wspd[i], wdir: d.wdir[i],
+          pressure: d.pressure[i], compass_dir: d.compass_dir?.[i] ?? null,
+          lat: d.lat?.[i] ?? null, lon: d.lon?.[i] ?? null, rh: d.rh?.[i] ?? null };
+        obsAppendPoint(p);
+        updateMaxWind(p);
+      }
+    }
+    for (const p of obsPending) { obsAppendPoint(p); updateMaxWind(p); }
+    obsPending = [];
+    obsInitialLoaded = true;
+    if (obsBuf.ts.length > 0) {
+      const i = obsBuf.ts.length - 1;
+      updateCurrentValues({ ts: obsBuf.ts[i], t: obsBuf.t[i], td: obsBuf.td[i],
+        wspd: obsBuf.wspd[i], wdir: obsBuf.wdir[i], pressure: obsBuf.pressure[i],
+        compass_dir: obsBuf.compass_dir[i], rh: obsBuf.rh[i], lat: obsBuf.lat[i], lon: obsBuf.lon[i] });
+      updateAvgPills();
+      updateObsStatus();
+      updatePosition();
+    }
+  });
+
+  const es = new EventSource('/view/stream');
+  es.onmessage = e => {
+    obsLastDataAt = Date.now();
+    const p = JSON.parse(e.data);
+    p.ts = normTs(p.ts);
+    if (!obsInitialLoaded) { obsPending.push(p); return; }
+    obsAppendPoint(p);
+    updateMaxWind(p);
+    updateCurrentValues(p);
+    if (obsBuf.ts.length % AVG_WIN === 0) updateAvgPills();
+    updateObsStatus();
+  };
+  es.onerror = () => {};
+
+  setInterval(updateObsStatus, 5000);
+}
+
+// ── System stats ─────────────────────────────────────────────────────────
+function formatDuration(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function updateStats() {
+  const now = new Date();
+  document.getElementById('stat-utc').textContent =
+    now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+
+  if (!statusData) return;
+  if (statusData.started_at != null) {
+    document.getElementById('stat-uptime').textContent =
+      formatDuration(Math.floor(Date.now() / 1000 - statusData.started_at));
+  }
+  if (statusData.cache) {
+    document.getElementById('stat-cache').textContent =
+      `${statusData.cache.points.toLocaleString()} pts · ${statusData.cache.current_file}`;
+  }
+  if (statusData.cpu_percent != null)
+    document.getElementById('stat-cpu').textContent = `${statusData.cpu_percent.toFixed(1)} %`;
+  if (statusData.mem_percent != null)
+    document.getElementById('stat-mem').textContent = `${statusData.mem_percent.toFixed(1)} %`;
+  if (statusData.disk_percent != null)
+    document.getElementById('stat-disk').textContent = `${statusData.disk_percent.toFixed(1)} %`;
+  if (statusData.python_version)
+    document.getElementById('stat-python').textContent = statusData.python_version;
+  if (statusData.test_mode != null) {
+    const el = document.getElementById('stat-mode');
+    el.textContent = statusData.test_mode ? 'TEST' : 'live';
+    el.style.color = statusData.test_mode ? 'var(--yellow)' : '';
+  }
+}
+
+function updatePosition() {
+  const n = obsBuf.ts.length;
+  if (n === 0) return;
+  const lat = obsBuf.lat[n - 1], lon = obsBuf.lon[n - 1];
+  document.getElementById('pos-lat').textContent = lat != null ? `${Math.abs(lat).toFixed(5)}° ${lat >= 0 ? 'N' : 'S'}` : '—';
+  document.getElementById('pos-lon').textContent = lon != null ? `${Math.abs(lon).toFixed(5)}° ${lon >= 0 ? 'E' : 'W'}` : '—';
+  if (lat != null && lon != null) {
+    const mapEl = document.getElementById('pos-map');
+    mapEl.href = `https://maps.google.com/?q=${lat},${lon}`;
+  }
+}
+
 fetchStatus();
 fetchVersion();
 initLogStream();
+initObsStream();
 
-// Poll status every 2 seconds, version every 60 seconds
+const _url = `${location.protocol}//${location.host}`;
+const urlEl = document.getElementById('stat-url');
+urlEl.textContent = _url;
+urlEl.href = _url;
+
+setInterval(() => { updateStats(); updatePosition(); }, 1000);
 setInterval(fetchStatus, 2000);
 setInterval(fetchVersion, 60000);
 </script>

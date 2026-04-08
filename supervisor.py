@@ -34,6 +34,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
+import psutil
 from flask import Flask, Response, jsonify, request
 
 from common import CONFIG_PATH, DEFAULT_DATA_DIR, DEFAULT_LOG_DIR, REPO_DIR, load_config
@@ -51,6 +52,7 @@ parser.add_argument('--no-browser', action='store_true', help='Skip opening brow
 _args, _ = parser.parse_known_args()
 
 # ── Shared state ─────────────────────────────────────────────────────────────
+_supervisor_started_at: float = time.time()
 _children_lock = threading.Lock()   # guards all child reads/mutations
 _log_fh = sys.stderr                # current log file handle; swapped on midnight rotation
 _log_fh_lock = threading.Lock()     # guards _log_fh swaps
@@ -574,6 +576,12 @@ def _create_app(cfg: dict, children: List[Child]) -> Flask:
         return jsonify({
             'components': components,
             'cache': cache,
+            'started_at': _supervisor_started_at,
+            'test_mode': _args.test,
+            'python_version': f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}',
+            'cpu_percent': psutil.cpu_percent(interval=None),
+            'mem_percent': psutil.virtual_memory().percent,
+            'disk_percent': psutil.disk_usage(cfg.get('data_dir', str(DEFAULT_DATA_DIR))).percent,
             'config': {
                 'logger_ip': cfg.get('logger_ip', '192.168.4.6'),
                 'http_port': int(cfg.get('http_port', 8080)),
