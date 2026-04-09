@@ -257,6 +257,15 @@ def _preflight(cfg: dict) -> None:
     _log('========================')
 
 
+def _safe_disk_usage(path: Path):
+    """Return disk usage percent for path, or None if path doesn't exist."""
+    try:
+        p = path if path.exists() else path.parent if path.parent.exists() else Path('/')
+        return psutil.disk_usage(str(p)).percent
+    except Exception:
+        return None
+
+
 def _get_local_ip() -> str:
     """Best-effort LAN IP discovery."""
     s = None
@@ -579,7 +588,7 @@ def _create_app(cfg: dict, children: List[Child]) -> Flask:
             'python_version': f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}',
             'cpu_percent': psutil.cpu_percent(interval=None),
             'mem_percent': psutil.virtual_memory().percent,
-            'disk_percent': psutil.disk_usage(cfg.get('data_dir', str(DEFAULT_DATA_DIR))).percent,
+            'disk_percent': _safe_disk_usage(Path(cfg.get('data_dir', str(DEFAULT_DATA_DIR))).expanduser()),
             'config': {
                 'logger_ip': cfg.get('logger_ip', '192.168.4.6'),
                 'http_port': int(cfg.get('http_port', 8080)),
