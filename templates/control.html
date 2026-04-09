@@ -222,6 +222,8 @@
     .btn:active { transform: scale(0.97); }
     .btn.danger { color: var(--red); }
     .btn.danger:hover { background: #3e2030; }
+    .btn.warn { color: var(--orange); border-color: var(--orange); }
+    .btn.warn:hover { background: #3e3020; }
 
     /* ── Legend ───────────────────────────────────────────────── */
     .legend {
@@ -376,7 +378,7 @@
         <div class="links" id="quick-links">
           <a class="link-btn" href="/view" target="_blank">Mesoview Dashboard</a>
           <a class="link-btn" id="link-rack" href="#" target="_blank">Datalogger Rack</a>
-          <a class="link-btn" id="link-log" href="#" onclick="scrollToLog(); return false;">Today's Log</a>
+          <button class="btn warn" onclick="restartAll()" style="margin-left:4px">Restart All</button>
         </div>
       </div>
 
@@ -644,6 +646,20 @@ async function fetchStatus() {
   }
 }
 
+async function restartAll() {
+  if (!confirm('Restart all enabled components?')) return;
+  try {
+    await fetch('/api/control', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'restart-all'}),
+    });
+    await fetchStatus();
+  } catch (e) {
+    console.error('restart-all failed:', e);
+  }
+}
+
 async function doControl(component, action) {
   try {
     await fetch('/api/control', {
@@ -760,10 +776,6 @@ function initLogStream() {
   es.onerror = () => {
     // EventSource auto-reconnects
   };
-}
-
-function scrollToLog() {
-  document.getElementById('log-viewer').scrollIntoView({behavior: 'smooth'});
 }
 
 // ── Live data sidebar ─────────────────────────────────────────────────────────

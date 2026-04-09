@@ -85,15 +85,13 @@ def _open_log(log_dir: Path) -> tuple[object, date]:
 
 
 def _log(msg: str) -> None:
-    """Write a timestamped log line to the current log file and stdout."""
+    """Write a timestamped log line to the current log file."""
     global _log_fh
     ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     line = f'[{ts}] [supervisor] {msg}'
     with _log_fh_lock:
         fh = _log_fh
     print(line, file=fh, flush=True)
-    if fh not in (sys.stdout, sys.stderr):
-        print(line, flush=True)
 
 
 # ── Log tail worker ──────────────────────────────────────────────────────────
@@ -598,6 +596,22 @@ def _create_app(cfg: dict, children: List[Child]) -> Flask:
         data = request.get_json(silent=True) or {}
         name = data.get('component')
         action = data.get('action')
+
+        if action == 'restart-all':
+            with _children_lock:
+                with _log_fh_lock:
+                    fh = _log_fh
+                restarted = []
+                for child in children:
+                    if child.enabled and child.status == 'running':
+                        child.terminate()
+                        time.sleep(0.5)
+                        child.kill()
+                        child.start(fh)
+                        child.restart_count += 1
+                        restarted.append(child.name)
+                _log(f'restart-all by user: {", ".join(restarted) or "none running"}')
+            return jsonify({'ok': True, 'restarted': restarted})
 
         with _children_lock:
             child = next((c for c in children if c.name == name), None)
