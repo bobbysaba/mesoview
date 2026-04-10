@@ -17,28 +17,34 @@ ICON_PNG = REPO_DIR / 'meso360.png'
 
 
 def _conda_python_cmd() -> list:
-    """Return a command prefix that runs Python in the meso360 conda env."""
-    import shutil, os
-    conda = shutil.which('conda')
-    if not conda and sys.platform == 'win32':
-        # Desktop shortcuts don't inherit the shell PATH — search common locations
-        for root in [
-            Path.home() / 'miniforge3',
-            Path.home() / 'miniconda3',
-            Path.home() / 'anaconda3',
-            Path('C:/ProgramData/miniforge3'),
-            Path('C:/ProgramData/miniconda3'),
-            Path('C:/ProgramData/anaconda3'),
-        ]:
-            candidate = root / 'Scripts' / 'conda.exe'
-            if candidate.exists():
-                conda = str(candidate)
-                break
-    if conda:
-        return [conda, 'run', '--no-capture-output', '-n', 'meso360', 'python']
-    # Fallback: search common install locations for the env's python executable
+    """Return a command prefix that runs Python in the meso360 conda env.
+
+    Strategy: find python.exe directly inside the env rather than using
+    'conda run -n meso360', because conda resolves env names by the first
+    match in environments.txt — which may not be the env where packages
+    are actually installed (e.g. mamba user envs vs miniforge envs).
+    """
+    import os
     exe = 'python.exe' if sys.platform == 'win32' else 'bin/python'
-    candidates = [
+
+    # Build candidate list — checked in order, first match wins
+    candidates: list[Path] = []
+
+    # 1. All envs registered in conda/mamba environments.txt files
+    if sys.platform == 'win32':
+        for env_txt in [
+            Path(os.environ.get('USERPROFILE', '')) / '.conda' / 'environments.txt',
+            Path(os.environ.get('USERPROFILE', '')) / '.mamba' / 'environments.txt',
+        ]:
+            if env_txt.exists():
+                for line in env_txt.read_text().splitlines():
+                    line = line.strip()
+                    if line and not line.startswith('#') and 'meso360' in line:
+                        candidates.append(Path(line) / 'python.exe')
+
+    # 2. Well-known install locations
+    candidates += [
+        Path.home() / '.local' / 'share' / 'mamba' / 'envs' / 'meso360' / exe,
         Path.home() / 'miniforge3'  / 'envs' / 'meso360' / exe,
         Path.home() / 'anaconda3'   / 'envs' / 'meso360' / exe,
         Path.home() / 'miniconda3'  / 'envs' / 'meso360' / exe,
@@ -47,18 +53,17 @@ def _conda_python_cmd() -> list:
         Path('/opt/homebrew/Caskroom/miniforge/base/envs/meso360/bin/python'),
         Path('/opt/conda/envs/meso360/bin/python'),
     ]
-    # Also search conda's own known env locations from its environments.txt
-    if sys.platform == 'win32':
-        import os
-        env_txt = Path(os.environ.get('USERPROFILE', '')) / '.conda' / 'environments.txt'
-        if env_txt.exists():
-            for line in env_txt.read_text().splitlines():
-                line = line.strip()
-                if line and not line.startswith('#') and 'meso360' in line:
-                    candidates.insert(0, Path(line) / 'python.exe')
+
     for p in candidates:
         if p.exists():
             return [str(p)]
+
+    # Last resort: conda run (may pick the wrong env if multiple meso360 envs exist)
+    import shutil
+    conda = shutil.which('conda')
+    if conda:
+        return [conda, 'run', '--no-capture-output', '-n', 'meso360', 'python']
+
     return [sys.executable]
 
 
@@ -142,15 +147,23 @@ class LaunchDialog:
         cmd = _conda_python_cmd() + [str(REPO_DIR / 'supervisor.py')]
         if self._test_var.get():
             cmd.append('--test')
+        log_path = REPO_DIR / 'launch.log'
         try:
             if sys.platform == 'win32':
+                with open(log_path, 'w') as log_fh:
+                    log_fh.write(f'cmd: {cmd}\n')
+                    log_fh.flush()
                 subprocess.Popen(cmd, cwd=str(REPO_DIR),
-                                 creationflags=subprocess.CREATE_NEW_CONSOLE)
+                                 creationflags=subprocess.CREATE_NEW_CONSOLE,
+                                 stdout=open(log_path, 'a'),
+                                 stderr=subprocess.STDOUT)
             else:
                 subprocess.Popen(cmd, cwd=str(REPO_DIR), start_new_session=True)
         except Exception as exc:
             messagebox.showerror('Launch failed', str(exc))
             return
+        messagebox.showinfo('meso360 launching',
+                            f'Supervisor starting.\n\nIf it crashes, check:\n{log_path}')
         self.root.destroy()
 
     def run(self):
