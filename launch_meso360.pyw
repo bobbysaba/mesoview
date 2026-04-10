@@ -18,8 +18,22 @@ ICON_PNG = REPO_DIR / 'meso360.png'
 
 def _conda_python_cmd() -> list:
     """Return a command prefix that runs Python in the meso360 conda env."""
-    import shutil
+    import shutil, os
     conda = shutil.which('conda')
+    if not conda and sys.platform == 'win32':
+        # Desktop shortcuts don't inherit the shell PATH — search common locations
+        for root in [
+            Path.home() / 'miniforge3',
+            Path.home() / 'miniconda3',
+            Path.home() / 'anaconda3',
+            Path('C:/ProgramData/miniforge3'),
+            Path('C:/ProgramData/miniconda3'),
+            Path('C:/ProgramData/anaconda3'),
+        ]:
+            candidate = root / 'Scripts' / 'conda.exe'
+            if candidate.exists():
+                conda = str(candidate)
+                break
     if conda:
         return [conda, 'run', '--no-capture-output', '-n', 'meso360', 'python']
     # Fallback: search common install locations for the env's python executable
@@ -33,6 +47,15 @@ def _conda_python_cmd() -> list:
         Path('/opt/homebrew/Caskroom/miniforge/base/envs/meso360/bin/python'),
         Path('/opt/conda/envs/meso360/bin/python'),
     ]
+    # Also search conda's own known env locations from its environments.txt
+    if sys.platform == 'win32':
+        import os
+        env_txt = Path(os.environ.get('USERPROFILE', '')) / '.conda' / 'environments.txt'
+        if env_txt.exists():
+            for line in env_txt.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith('#') and 'meso360' in line:
+                    candidates.insert(0, Path(line) / 'python.exe')
     for p in candidates:
         if p.exists():
             return [str(p)]
