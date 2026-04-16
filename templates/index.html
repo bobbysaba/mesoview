@@ -598,7 +598,7 @@ const AVG_WIN    = 30;    // number of points in the live 30-second sidebar aver
 const GAP_SEC    = 2;     // readings ≥2 s apart get a null sentinel (line break on chart); 2 s gives one missed reading before flagging a gap
 const OPS_GAP_SEC = 14400; // gap ≥4 hours marks a new operations day; limits how far back pan/zoom can scroll
 
-let buf = { ts: [], t: [], td: [], wspd: [], wdir: [], pressure: [], compass_dir: [], lat: [], lon: [], rh: [] };
+let buf = { ts: [], t: [], td: [], wspd: [], wdir: [], pressure: [], compass_dir: [], lat: [], lon: [], alt: [], rh: [] };
 // parallel arrays — every field has the same length as buf.ts.
 // null values in non-ts fields mark gap sentinels (see pushGap).
 
@@ -1446,6 +1446,7 @@ function pushGap(ts) {
   buf.compass_dir.push(null);
   buf.lat.push(null);
   buf.lon.push(null);
+  buf.alt.push(null);
   buf.rh.push(null);
 }
 
@@ -1757,6 +1758,7 @@ requestAnimationFrame(() => {
             lat: d.lat ? d.lat[i] : null,
             lon: d.lon ? d.lon[i] : null,
             alt: d.alt ? d.alt[i] : null,
+            rh: d.rh ? d.rh[i] : null,
           };
           appendPoint(p);
         }
